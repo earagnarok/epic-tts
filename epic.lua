@@ -56,31 +56,41 @@ function onScriptingButtonDown(index, color)
                 points    = circleZoc(v, rangeInCm),
                 color     = stringColorToRGB(color),
                 thickness = compensatedThickness,
-                rotation  = compensatedRotation,
+                rotation  = {0, 0, 0},
             }
         })
       end
     end
 end
+
 function hasRectangleBase(obj)
   local size = obj.getBoundsNormalized()["size"]
   local ratio = math.abs(size[1]/size[3])
   return ratio < 0.95 or ratio > 1.05
 end
+
 function circleZoc(obj, radius)
     local size = obj.getBoundsNormalized()["size"]
-    local baseSize = math.max(size[1], size[3])
-    local scale = obj.getScale()
-    local radiusCompensated = compensate(scale[1], radius + (baseSize/2))
+    local radiusFromCenter = radius + math.max(size[1], size[3]) / 2)
     local points = {}
-    for i = 0,36 do
-      table.insert(points, {math.cos(math.rad(i*10)) * radiusCompensated, elevation, math.sin(math.rad(i*10)) * radiusCompensated})
-    end
-    for i = 0,36 do
-      table.insert(points, {math.cos(math.rad(i*10)) * radiusCompensated, elevation+1, math.sin(math.rad(i*10)) * radiusCompensated})
-    end
+
+    insertCircle(points, obj, radiusFromCenter, elevation)
+    insertCircle(points, obj, radiusFromCenter, elevation + 1)
     return points
 end
+
+function insertCircle(points, object, radius, elevation)
+  local pos = object.getPosition()
+  for i = 0,36 do
+    table.insert(points, object.positionToLocal({
+      (math.cos(math.rad(i*10)) * radius) + pos.x,
+      elevation + pos.y,
+      (math.sin(math.rad(i*10)) * radius) + pos.z
+    }))
+  end
+end
+
+-- TODO
 function circleFromCenter(obj, radius)
     local scale = obj.getScale()
     local radiusCompensated = compensate(scale[1], radius)
@@ -93,6 +103,8 @@ function circleFromCenter(obj, radius)
     end
     return points
 end
+
+-- TODO
 function rectangleZoc(obj, zoc)
   local size = obj.getBoundsNormalized()["size"]
   local width = size[1]
@@ -128,6 +140,7 @@ function rectangleZoc(obj, zoc)
   table.insert(points, {compensate(scale[1], (width/2) + math.cos(math.rad(0)) * zoc), compensatedElevation, compensate(scale[3], (height/2) + math.sin(math.rad(0)) * zoc)})
   return points
 end
+
 function compensate(s, v)
   return v/s
 end
