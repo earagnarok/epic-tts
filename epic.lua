@@ -38,7 +38,7 @@ function onScriptingButtonDown(index, color)
                 points    = circleFromCenter(v, rangeInCm),
                 color     = stringColorToRGB(color),
                 thickness = compensatedThickness,
-                rotation  = compensatedRotation,
+                rotation  = {0, 0, 0},
             }
         })
       elseif hasRectangleBase(v) then
@@ -71,11 +71,18 @@ end
 
 function circleZoc(obj, radius)
     local size = obj.getBoundsNormalized()["size"]
-    local radiusFromCenter = radius + math.max(size[1], size[3]) / 2)
+    local radiusFromCenter = radius + (math.max(size[1], size[3]) / 2)
     local points = {}
 
     insertCircle(points, obj, radiusFromCenter, elevation)
     insertCircle(points, obj, radiusFromCenter, elevation + 1)
+    return points
+end
+
+function circleFromCenter(obj, radius)
+    local points = {}
+    insertCircle(points, obj, radius, elevation)
+    insertCircle(points, obj, radius, elevation + 1)
     return points
 end
 
@@ -88,20 +95,6 @@ function insertCircle(points, object, radius, elevation)
       (math.sin(math.rad(i*10)) * radius) + pos.z
     }))
   end
-end
-
--- TODO
-function circleFromCenter(obj, radius)
-    local scale = obj.getScale()
-    local radiusCompensated = compensate(scale[1], radius)
-    local points = {}
-    for i = 0,36 do
-      table.insert(points, {math.cos(math.rad(i*10)) * radiusCompensated, elevation, math.sin(math.rad(i*10)) * radiusCompensated})
-    end
-    for i = 0,36 do
-      table.insert(points, {math.cos(math.rad(i*10)) * radiusCompensated, elevation+1, math.sin(math.rad(i*10)) * radiusCompensated})
-    end
-    return points
 end
 
 -- TODO
