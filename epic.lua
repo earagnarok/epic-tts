@@ -3,7 +3,7 @@
 function onLoad()
     inches = 2.54
     rangeToolRanges = {5, 10, 15, 20, 30, 45, 60, 75, 15, 0}
-    elevation = 0.1
+    elevation = 0.2
 end
 --[[ The onUpdate event is called once per frame. --]]
 function onUpdate ()
@@ -25,8 +25,8 @@ function onScriptingButtonDown(index, color)
       local rotation = v.getRotation()
       local scale = v.getScale()
       local compensatedThickness = (0.05 / math.max(scale["x"], scale["x"], scale["x"]))
-      local rotation = v.getRotation()
-      local compensatedRotation = {-rotation["x"],0,-rotation["z"]}
+      -- local rotation = v.getRotation()
+      -- local compensatedRotation = {-rotation["x"],0,-rotation["z"]}
       --log(scale, "Scale")
       --log(v.getBoundsNormalized()["size"], "Size")
       --log(compensatedThickness, "Thickness")
@@ -47,7 +47,7 @@ function onScriptingButtonDown(index, color)
                 points    = rectangleZoc(v, rangeInCm),
                 color     = stringColorToRGB(color),
                 thickness = compensatedThickness,
-                rotation  = compensatedRotation,
+                rotation  = {0, 0, 0},
             }
         })
       else
@@ -86,54 +86,60 @@ function circleFromCenter(obj, radius)
     return points
 end
 
-function insertCircle(points, object, radius, elevation)
-  local pos = object.getPosition()
-  for i = 0,36 do
-    table.insert(points, object.positionToLocal({
-      (math.cos(math.rad(i*10)) * radius) + pos.x,
-      elevation + pos.y,
-      (math.sin(math.rad(i*10)) * radius) + pos.z
-    }))
-  end
-end
-
--- TODO
 function rectangleZoc(obj, zoc)
+  -- local points = {}
+  -- insertRectangle(points, obj, zoc, elevation)
+  -- insertRectangle(points, obj, zoc, elevation + 1)
+  -- return points
   local size = obj.getBoundsNormalized()["size"]
   local width = size[1]
   local height = size[3]
   local scale = obj.getScale()
   local points = {}
-  table.insert(points, {compensate(scale[1], zoc+(width/2)), elevation, compensate(scale[3], -height/2)})
+  table.insert(points, globalToLocal(obj, {zoc+(width/2), elevation, -height/2}))
   for i=0,9 do
-      table.insert(points, {compensate(scale[1], (width/2) + math.cos(math.rad(i*10)) * zoc), elevation, compensate(scale[3], (height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
   for i=10,18 do
-      table.insert(points, {compensate(scale[1], (-width/2) + math.cos(math.rad(i*10)) * zoc), elevation, compensate(scale[3], (height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
   for i=19,27 do
-      table.insert(points, {compensate(scale[1], (-width/2) + math.cos(math.rad(i*10)) * zoc), elevation, compensate(scale[3], (-height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
   for i=28,36 do
-      table.insert(points, {compensate(scale[1], (width/2) + math.cos(math.rad(i*10)) * zoc), elevation, compensate(scale[3], (-height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
-  local compensatedElevation = compensate(scale[1], 1) + 1
+  local compensatedElevation = elevation + 1
   for i=0,9 do
-      table.insert(points, {compensate(scale[1], (width/2) + math.cos(math.rad(i*10)) * zoc), compensatedElevation, compensate(scale[3], (height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
   for i=10,18 do
-      table.insert(points, {compensate(scale[1], (-width/2) + math.cos(math.rad(i*10)) * zoc), compensatedElevation, compensate(scale[3], (height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
   for i=19,27 do
-      table.insert(points, {compensate(scale[1], (-width/2) + math.cos(math.rad(i*10)) * zoc), compensatedElevation, compensate(scale[3], (-height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
   for i=28,36 do
-      table.insert(points, {compensate(scale[1], (width/2) + math.cos(math.rad(i*10)) * zoc), compensatedElevation, compensate(scale[3], (-height/2) + math.sin(math.rad(i*10)) * zoc)})
+      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
   end
-  table.insert(points, {compensate(scale[1], (width/2) + math.cos(math.rad(0)) * zoc), compensatedElevation, compensate(scale[3], (height/2) + math.sin(math.rad(0)) * zoc)})
+  table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(0)) * zoc, compensatedElevation, (height/2) + math.sin(math.rad(0)) * zoc}))
   return points
 end
 
-function compensate(s, v)
-  return v/s
+function insertCircle(points, object, radius, elevation)
+  for i = 0,36 do
+    table.insert(points, globalToLocal(object, {
+      (math.cos(math.rad(i*10)) * radius),
+      elevation,
+      (math.sin(math.rad(i*10)) * radius)
+    }))
+  end
+end
+
+function globalToLocal(object, coordinates)
+  return object.positionToLocal({
+    coordinates[1] + object.getPosition().x,
+    coordinates[2] + object.getPosition().y,
+    coordinates[3] + object.getPosition().z
+  })
 end
