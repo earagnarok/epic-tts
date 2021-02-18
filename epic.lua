@@ -4,6 +4,7 @@ function onLoad()
     inches = 2.54
     rangeToolRanges = {5, 10, 15, 20, 30, 45, 60, 75, 15, 0}
     elevation = 0.2
+    thickness = 0.05
 end
 --[[ The onUpdate event is called once per frame. --]]
 function onUpdate ()
@@ -13,6 +14,7 @@ function onScriptingButtonDown(index, color)
     local player = Player[color]
     local selected = player.getSelectedObjects()
     local range = rangeToolRanges[index]
+
     if range == 0 then
       print(player.steam_name, " disabled highlight")
     elseif index == 9 then
@@ -20,16 +22,10 @@ function onScriptingButtonDown(index, color)
     else
       print(player.steam_name, " requested ", range, "cm highlight")
     end
+
     local rangeInCm = range / inches
+
     for k, v in pairs(selected) do
-      local rotation = v.getRotation()
-      local scale = v.getScale()
-      local compensatedThickness = (0.05 / math.max(scale["x"], scale["x"], scale["x"]))
-      -- local rotation = v.getRotation()
-      -- local compensatedRotation = {-rotation["x"],0,-rotation["z"]}
-      --log(scale, "Scale")
-      --log(v.getBoundsNormalized()["size"], "Size")
-      --log(compensatedThickness, "Thickness")
       if index == 10 then
         v.setVectorLines({})
       elseif  index == 9 then
@@ -37,7 +33,7 @@ function onScriptingButtonDown(index, color)
             {
                 points    = circleFromCenter(v, rangeInCm),
                 color     = stringColorToRGB(color),
-                thickness = compensatedThickness,
+                thickness = compensatedThickness(v),
                 rotation  = {0, 0, 0},
             }
         })
@@ -46,7 +42,7 @@ function onScriptingButtonDown(index, color)
             {
                 points    = rectangleZoc(v, rangeInCm),
                 color     = stringColorToRGB(color),
-                thickness = compensatedThickness,
+                thickness = compensatedThickness(v),
                 rotation  = {0, 0, 0},
             }
         })
@@ -55,12 +51,16 @@ function onScriptingButtonDown(index, color)
             {
                 points    = circleZoc(v, rangeInCm),
                 color     = stringColorToRGB(color),
-                thickness = compensatedThickness,
+                thickness = compensatedThickness(v),
                 rotation  = {0, 0, 0},
             }
         })
       end
     end
+end
+
+function compensatedThickness(object)
+  local compensatedThickness = (thickness / math.max(object.getScale()["x"], object.getScale()["y"], object.getScale()["z"]))
 end
 
 function hasRectangleBase(obj)
@@ -87,53 +87,52 @@ function circleFromCenter(obj, radius)
 end
 
 function rectangleZoc(obj, zoc)
-  -- local points = {}
-  -- insertRectangle(points, obj, zoc, elevation)
-  -- insertRectangle(points, obj, zoc, elevation + 1)
-  -- return points
-  local size = obj.getBoundsNormalized()["size"]
-  local width = size[1]
-  local height = size[3]
-  local scale = obj.getScale()
   local points = {}
-  table.insert(points, globalToLocal(obj, {zoc+(width/2), elevation, -height/2}))
-  for i=0,9 do
-      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  for i=10,18 do
-      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  for i=19,27 do
-      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  for i=28,36 do
-      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, elevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  local compensatedElevation = elevation + 1
-  for i=0,9 do
-      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  for i=10,18 do
-      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  for i=19,27 do
-      table.insert(points, globalToLocal(obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  for i=28,36 do
-      table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, compensatedElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc}))
-  end
-  table.insert(points, globalToLocal(obj, {(width/2) + math.cos(math.rad(0)) * zoc, compensatedElevation, (height/2) + math.sin(math.rad(0)) * zoc}))
+  insertRectangle(points, obj, elevation, zoc)
+  insertRectangle(points, obj, elevation + 1, zoc)
   return points
 end
 
-function insertCircle(points, object, radius, elevation)
+function insertRectangle(points, obj, localElevation,  zoc)
+  local width = obj.getBoundsNormalized()["size"][1]
+  local height = obj.getBoundsNormalized()["size"][3]
+
+  handleRactanglePoint(points, obj, {zoc+(width/2), localElevation, -height/2})
+  for i=0,9 do
+      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*10)) * zoc})
+  end
+  for i=10,18 do
+      handleRactanglePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*10)) * zoc})
+  end
+  for i=19,27 do
+      handleRactanglePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
+  end
+  for i=28,36 do
+      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
+  end
+end
+
+function insertCircle(points, object, radius, localElevation)
   for i = 0,36 do
     table.insert(points, globalToLocal(object, {
       (math.cos(math.rad(i*10)) * radius),
-      elevation,
+      localElevation,
       (math.sin(math.rad(i*10)) * radius)
     }))
   end
+end
+
+function handleRactanglePoint(result, object, point)
+  local rotated = rotateRoundY(math.rad(-object.getRotation().y + 360), point)
+  table.insert(result, globalToLocal(object, rotated))
+end
+
+function rotateRoundY(angle, point)
+  return {
+    point[1] * math.cos(angle) - point[3] * math.sin(angle),
+    point[2],
+    point[1] * math.sin(angle) + point[3] * math.cos(angle)
+  }
 end
 
 function globalToLocal(object, coordinates)
