@@ -60,7 +60,7 @@ function onScriptingButtonDown(index, color)
 end
 
 function compensatedThickness(object)
-  local compensatedThickness = (thickness / math.max(object.getScale()["x"], object.getScale()["y"], object.getScale()["z"]))
+  return (thickness / object.getScale()["x"])
 end
 
 function hasRectangleBase(obj)
