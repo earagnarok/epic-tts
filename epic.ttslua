@@ -1,20 +1,330 @@
 --[[ Lua code. See documentation: http://berserk-games.com/knowledgebase/scripting/ --]]
 --[[ The onLoad event is called after the game save finishes loading. --]]
-function onLoad()
-    inches = 2.54
-    rangeToolRanges = {5, 10, 15, 20, 30, 45, 60, 75, 15, 0}
-    elevation = 0.2
-    thickness = 0.05
-end
+
 --[[ The onUpdate event is called once per frame. --]]
 function onUpdate ()
     --[[ print('onUpdate loop!') --]]
 end
+
+-- action = {
+--   spawn = {
+--     custom = object.getCustomObject(),
+--     base = {
+--       type = object.name,
+--       position = object.getPosition(),
+--       rotation = object.getRotation(),
+--       scale = object.getScale(),
+--       tint = object.getColorTint()
+--     }
+--   }
+--   move = {
+--     position = Table,
+--     rotation = Table
+--   }
+--   destroyed = false
+-- }
+
+function onLoad()
+    self.UI.hide("recordActionPanel")
+
+    inches = 2.54
+    rangeToolRanges = {5, 10, 15, 20, 30, 45, 60, 75, 15, 0}
+    elevation = 0.2
+    thickness = 0.05
+
+
+    -- Original models and positions when the recording started
+    recorded = {}
+    -- Actions are recorded based on model GUID, when later deleted and respawned during replay initialization
+    -- new model GUID needs to be mapped to the originaly recorded GUID.
+    guidMapping = {}
+    -- All actions recorded
+    actions = {}
+    -- Current action
+    action = {}
+    -- Action index during replay, first action = 1
+    actionIndex = 1
+    -- State of recording 0=before recording started, 1=recording in progress, 2=replay
+    recordState = 0
+
+    addContextMenuItem("Add to recording", tagRecorded)
+    addContextMenuItem("Show recorded", flash)
+    addContextMenuItem("Start recording", saveInitial)
+    addHotkey("Record action", recordAction, false)
+    addHotkey("Next action", nextAction, false)
+end
+
+-- Highlight all recorded models
+function flash(player_color, menu_position)
+  items = getObjectsWithTag("recorded")
+  for k, v in pairs(items) do
+    v.highlightOn(player_color, 1)
+  end
+end
+
+-- add models to the recording
+function tagRecorded(player_color, menu_position)
+    local selected = Player[player_color].getSelectedObjects()
+    for k, v in pairs(selected) do
+      v.addTag("recorded")
+    end
+end
+
+-- Save initial state of the recording and info about recorded modes
+-- in order to be able to spawn them later
+function saveInitial(player_color, menu_position)
+  items = getObjectsWithTag("recorded")
+
+  for k, v in pairs(items) do
+    recorded[v.guid] = getSpawnInfo(v)
+  end
+
+  clearContextMenu()
+  addContextMenuItem("Record action", recordAction)
+  addContextMenuItem("Start replay", toInitial)
+  recordState = 1
+end
+
+-- Init recording of an action, will show UI for action text input
+function recordAction(player)
+  if recordState == 1 then
+    self.UI.show("recordActionPanel")
+  else
+    broadcastToColor("Recording has not started", player)
+  end
+end
+
+-- User saved action, triggered from UI
+function recordActionSave(player, text)
+  log(text, "Record action")
+  action.text = text
+
+  actions[actionIndex] = action
+  action = {}
+  actionIndex = actionIndex + 1
+
+  self.UI.hide("recordActionPanel")
+  self.UI.setAttribute("recordActionText", "text", "")
+end
+
+-- User canceled record action dialog, triggered from UI
+function recordActionCancel()
+  self.UI.hide("recordActionPanel")
+  self.UI.setAttribute("recordActionText", "text", "")
+end
+
+-- Move models to starting position and spawn deleted models
+function toInitial(player_color, menu_position)
+  log("toInitial")
+  -- delete all objects spawned during the game
+  items = getObjectsWithTag("recorded")
+  for k, v in pairs(items) do
+    if recorded[v.guid] == nil then
+      destroyObject(v)
+    end
+  end
+  -- Reset action index to play from first action
+  actionIndex = 1
+
+  for k, v in pairs(recorded) do
+    local item = getObjectFromGUID(k)
+
+    -- The model not deleted, move to starting position
+    if item != nil then
+      guidMapping[k] = k
+      item.setPositionSmooth(v.base.position, false, true)
+      item.setRotationSmooth(v.base.rotation, false, true)
+    else -- Spawn the model at the starting position
+      local object = localSpawn(v)
+      guidMapping[k] = object.guid
+    end
+  end
+
+  -- Change menu options & recording state
+  clearContextMenu()
+  addContextMenuItem("Retart replay", toInitial)
+  addContextMenuItem("Next move", nextAction)
+  recordState = 2
+end
+
+-- Replay next action
+function nextAction(color)
+  if recordState != 2 then
+    broadcastToColor("Replay not started", color)
+    return
+  end
+
+  -- remove all models marked as killed in previous action
+  deleteDead()
+  local action = actions[actionIndex]
+
+  -- If we reached the end of the replay
+  if action == nil then
+    broadcastToAll("End of game")
+    return
+  end
+
+  -- Show axtion description as a broadcast
+  broadcastToAll(action.text)
+
+  -- Execute all recorded changes for this action
+  for k, v in pairs(action) do
+    if k != "text" then
+      local item
+
+      -- Spawn the object if it is new for this action
+      if v.spawn != nil then
+        item = localSpawn(v.spawn)
+        guidMapping[k] = item.guid
+      else -- or load it by GUID
+        item = getObjectFromGUID(guidMapping[k])
+      end
+
+      -- Move it, if moved
+      if v.move != nil then
+        if v.move.position != nil then
+          item.setPositionSmooth(v.move.position, false, false)
+        end
+        if v.move.rotation != nil then
+          item.setRotationSmooth(v.move.rotation, false, false)
+        end
+      end
+
+      -- Mark it deleted, if destroyed
+      if v.destroyed then
+        item.highlightOn("Red")
+        item.addTag("dead")
+      end
+    end
+  end
+
+  -- Move on to next action
+  actionIndex = actionIndex + 1
+end
+
+-- Delete all models marked as dead
+function deleteDead()
+  items = getObjectsWithTag("dead")
+  for k, v in pairs(items) do
+    destroyObject(v)
+  end
+end
+
+-- Record deleted models, called by the game
+function onObjectDestroy(object)
+  if object.hasTag("recorded") and recordState == 1 then
+    if action[object.guid] != nil then
+      action[object.guid].destroyed = true
+    else
+      action[object.guid] = {
+        destroyed = true
+      }
+    end
+  end
+end
+
+-- Record rotated models, called by the game
+function onObjectRotate(object, spin, flip, player_color, old_spin, old_flip)
+  if object.hasTag("recorded") and recordState == 1 then
+    recordMove(object)
+  end
+end
+
+-- Record moved models, called by the game
+function onObjectDrop(colorName, object)
+  if object.hasTag("recorded") and recordState == 1 then
+    recordMove(object)
+  end
+end
+
+-- record the initial position of the model if this was not part of the setup, eg BMs, Daemons, etc... called by the game
+function onObjectSpawn(object)
+  if object.hasTag("recorded") and recordState == 1 then
+    recordSpawn(object)
+  end
+end
+
+-- Privte helper function: record a move (rotation or position change)
+function recordMove(object)
+  if action[object.guid] != nil then
+    action[object.guid].move = {
+      position = object.getPosition(),
+      rotation = object.getRotation()
+    }
+  else
+    action[object.guid] = {
+      move = {
+        position = object.getPosition(),
+        rotation = object.getRotation()
+      }
+    }
+  end
+end
+
+-- Privte helper function: Record info needed to respawn model on current action
+function recordSpawn(object)
+  if action[object.guid] != nil then
+    action[object.guid].spawn = getSpawnInfo(object)
+  else
+    action[object.guid] = {
+      spawn = getSpawnInfo(object)
+    }
+  end
+end
+
+-- Privte helper function: Spawn a model
+function localSpawn(description)
+  local object = spawnObject(description.base)
+  object.setCustomObject(description.custom)
+  object.setColorTint(description.base.tint)
+  object.setName(description.base.name)
+  object.setDescription(description.base.description)
+  object.addTag("recorded")
+
+  for k, v in pairs(description.children) do
+    local child = localSpawn(v)
+    object.addAttachment(child)
+  end
+
+  return object
+end
+
+-- Privte helper function: Format info needed to respawn model
+function getSpawnInfo(object)
+  local tmp = {
+    custom = object.getCustomObject(),
+    base = {
+      type = object.name,
+      position = object.getPosition(),
+      rotation = object.getRotation(),
+      scale = object.getScale(),
+      tint = object.getColorTint(),
+      description = object.getDescription(),
+      name = object.getName()
+    },
+    children = {}
+  }
+
+  -- removing attachments is the only way to get all info on attached object
+  for k, v in pairs(object.removeAttachments()) do
+    -- load the detached object via the GUID
+    local childObject = getObjectFromGUID(v.guid)
+    -- Save data needed to respawn the object
+    local child = getSpawnInfo(childObject)
+    table.insert(tmp.children, k, child)
+    -- re-attach the child
+    object.addAttachment(v)
+  end
+
+  return tmp
+end
+
+
+-- Draw ZoC stuff
 function onScriptingButtonDown(index, color)
     local player = Player[color]
     local selected = player.getSelectedObjects()
     local range = rangeToolRanges[index]
-
     if range == 0 then
       print(player.steam_name, " disabled highlight")
     elseif index == 9 then
@@ -22,9 +332,7 @@ function onScriptingButtonDown(index, color)
     else
       print(player.steam_name, " requested ", range, "cm highlight")
     end
-
     local rangeInCm = range / inches
-
     for k, v in pairs(selected) do
       if index == 10 then
         v.setVectorLines({})
@@ -58,45 +366,37 @@ function onScriptingButtonDown(index, color)
       end
     end
 end
-
 function compensatedThickness(object)
   return (thickness / object.getScale()["x"])
 end
-
 function hasRectangleBase(obj)
   local size = obj.getBoundsNormalized()["size"]
   local ratio = math.abs(size[1]/size[3])
   return ratio < 0.95 or ratio > 1.05
 end
-
 function circleZoc(obj, radius)
     local size = obj.getBoundsNormalized()["size"]
     local radiusFromCenter = radius + (math.max(size[1], size[3]) / 2)
     local points = {}
-
     insertCircle(points, obj, radiusFromCenter, elevation)
     insertCircle(points, obj, radiusFromCenter, elevation + 1)
     return points
 end
-
 function circleFromCenter(obj, radius)
     local points = {}
     insertCircle(points, obj, radius, elevation)
     insertCircle(points, obj, radius, elevation + 1)
     return points
 end
-
 function rectangleZoc(obj, zoc)
   local points = {}
   insertRectangle(points, obj, elevation, zoc)
   insertRectangle(points, obj, elevation + 1, zoc)
   return points
 end
-
 function insertRectangle(points, obj, localElevation,  zoc)
   local width = obj.getBoundsNormalized()["size"][1]
   local height = obj.getBoundsNormalized()["size"][3]
-
   handleRactanglePoint(points, obj, {zoc+(width/2), localElevation, -height/2})
   for i=0,9 do
       handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*10)) * zoc})
@@ -111,7 +411,6 @@ function insertRectangle(points, obj, localElevation,  zoc)
       handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
   end
 end
-
 function insertCircle(points, object, radius, localElevation)
   for i = 0,36 do
     table.insert(points, globalToLocal(object, {
@@ -121,29 +420,10 @@ function insertCircle(points, object, radius, localElevation)
     }))
   end
 end
-
-function insertCircleWithArks(points, object, radius, localElevation)
-  local degrees = 0
-  for i = 0,81 do
-    local p = rotateRoundY(math.rad(-object.getRotation().y + 360), {
-      (math.cos(math.rad(degrees)) * radius),
-      localElevation,
-      (math.sin(math.rad(degrees)) * radius)
-    })
-    table.insert(points, globalToLocal(object, p))
-    if (i > 0 and i % 10 == 0) then
-      degrees = (degrees + 180) % 360
-    else
-      degrees = degrees + 5
-    end
-  end
-end
-
 function handleRactanglePoint(result, object, point)
   local rotated = rotateRoundY(math.rad(-object.getRotation().y + 360), point)
   table.insert(result, globalToLocal(object, rotated))
 end
-
 function rotateRoundY(angle, point)
   return {
     point[1] * math.cos(angle) - point[3] * math.sin(angle),
@@ -151,7 +431,6 @@ function rotateRoundY(angle, point)
     point[1] * math.sin(angle) + point[3] * math.cos(angle)
   }
 end
-
 function globalToLocal(object, coordinates)
   return object.positionToLocal({
     coordinates[1] + object.getPosition().x,

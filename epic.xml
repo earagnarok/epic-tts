@@ -1,0 +1,14 @@
+<!-- Xml UI. See documentation: https://api.tabletopsimulator.com/ui/introUI/ -->
+<Button rectAlignment="UpperRight">Record Action</Button>
+<Panel color="black" width="41%" height="21%" padding="2" id="recordActionPanel">
+  <Panel color="white" padding="10">
+    <VerticalLayout spacing="10">
+      <Text color="blue">Enter a short description of the action performed</Text>
+      <InputField placeholder="Describe the action" onEndEdit="recordActionTextChanged" id="recordActionText"></InputField>
+      <HorizontalLayout spacing="10">
+        <Button onClick="recordActionSave">Save</Button>
+        <Button onClick="recordActionCancel" id="recordActionCancel">Cancel</Button>
+      </HorizontalLayout>
+    </VerticalLayout>
+  </Panel>
+</Panel>
