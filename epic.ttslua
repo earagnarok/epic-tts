@@ -38,6 +38,7 @@ function onLoad()
     -- Actions are recorded based on model GUID, when later deleted and respawned during replay initialization
     -- new model GUID needs to be mapped to the originaly recorded GUID.
     guidMapping = {}
+
     -- All actions recorded
     actions = {}
     -- Current action
@@ -47,11 +48,26 @@ function onLoad()
     -- State of recording 0=before recording started, 1=recording in progress, 2=replay
     recordState = 0
 
-    addContextMenuItem("Add to recording", tagRecorded)
-    addContextMenuItem("Show recorded", flash)
-    addContextMenuItem("Start recording", saveInitial)
+    setupContextMenu()
     addHotkey("Record action", recordAction, false)
     addHotkey("Next action", nextAction, false)
+end
+
+function setupContextMenu()
+  clearContextMenu()
+
+  if recordState == 0 then
+    addContextMenuItem("+ to recording", tagRecorded)
+    addContextMenuItem("- from recorded", removeRecorded)
+    addContextMenuItem("Show recorded", flash)
+    addContextMenuItem("Start recording", saveInitial)
+  elseif recordState == 1 then
+    addContextMenuItem("Record action", recordAction)
+    addContextMenuItem("End recording", finalizeRecording)
+  else
+    addContextMenuItem("Restart replay", toInitial)
+    addContextMenuItem("Show next", nextAction)
+  end
 end
 
 -- Highlight all recorded models
@@ -70,6 +86,14 @@ function tagRecorded(player_color, menu_position)
     end
 end
 
+-- remove models from the recording
+function removeRecorded(player_color, menu_position)
+    local selected = Player[player_color].getSelectedObjects()
+    for k, v in pairs(selected) do
+      v.removeTag("recorded")
+    end
+end
+
 -- Save initial state of the recording and info about recorded modes
 -- in order to be able to spawn them later
 function saveInitial(player_color, menu_position)
@@ -79,10 +103,14 @@ function saveInitial(player_color, menu_position)
     recorded[v.guid] = getSpawnInfo(v)
   end
 
-  clearContextMenu()
-  addContextMenuItem("Record action", recordAction)
-  addContextMenuItem("Start replay", toInitial)
   recordState = 1
+  setupContextMenu()
+end
+
+-- End the recording
+function finalizeRecording()
+  recordState = 2
+  setupContextMenu()
 end
 
 -- Init recording of an action, will show UI for action text input
@@ -96,7 +124,6 @@ end
 
 -- User saved action, triggered from UI
 function recordActionSave(player, text)
-  log(text, "Record action")
   action.text = text
 
   actions[actionIndex] = action
@@ -115,7 +142,6 @@ end
 
 -- Move models to starting position and spawn deleted models
 function toInitial(player_color, menu_position)
-  log("toInitial")
   -- delete all objects spawned during the game
   items = getObjectsWithTag("recorded")
   for k, v in pairs(items) do
@@ -123,6 +149,7 @@ function toInitial(player_color, menu_position)
       destroyObject(v)
     end
   end
+
   -- Reset action index to play from first action
   actionIndex = 1
 
@@ -139,12 +166,6 @@ function toInitial(player_color, menu_position)
       guidMapping[k] = object.guid
     end
   end
-
-  -- Change menu options & recording state
-  clearContextMenu()
-  addContextMenuItem("Retart replay", toInitial)
-  addContextMenuItem("Next move", nextAction)
-  recordState = 2
 end
 
 -- Replay next action
@@ -156,11 +177,12 @@ function nextAction(color)
 
   -- remove all models marked as killed in previous action
   deleteDead()
+
   local action = actions[actionIndex]
 
   -- If we reached the end of the replay
   if action == nil then
-    broadcastToAll("End of game")
+    broadcastToAll("End of recording")
     return
   end
 
@@ -212,7 +234,7 @@ end
 
 -- Record deleted models, called by the game
 function onObjectDestroy(object)
-  if object.hasTag("recorded") and recordState == 1 then
+  if object.hasTag("recorded") and not object.hasTag("dead") and recordState == 1 then
     if action[object.guid] != nil then
       action[object.guid].destroyed = true
     else
