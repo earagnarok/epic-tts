@@ -116,16 +116,22 @@ end
 -- Init recording of an action, will show UI for action text input
 function recordAction(player)
   if recordState == 1 then
+    self.UI.setAttribute("recordActionPanel", "visibility", player)
     self.UI.show("recordActionPanel")
   else
     broadcastToColor("Recording has not started", player)
   end
 end
 
--- User saved action, triggered from UI
-function recordActionSave(player, text)
+-- Called by action input field when edited
+function cacheActionText(player, text)
+  log(text, "onEndEdit")
   action.text = text
+end
 
+-- User saved action, triggered from UI
+function recordActionSave(player)
+  log(action, "save")
   actions[actionIndex] = action
   action = {}
   actionIndex = actionIndex + 1
