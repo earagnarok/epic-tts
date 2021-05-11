@@ -8,14 +8,10 @@ end
 
 -- action = {
 --   spawn = {
---     custom = object.getCustomObject(),
---     base = {
---       type = object.name,
---       position = object.getPosition(),
---       rotation = object.getRotation(),
---       scale = object.getScale(),
---       tint = object.getColorTint()
---     }
+--     json = object.getObjectJson(),
+--     position = object.getPosition(),
+--     rotation = object.getRotation(),
+--     scale = object.getScale()
 --   }
 --   move = {
 --     position = Table,
@@ -32,68 +28,55 @@ function onLoad(serializedState)
     elevation = 0.2
     thickness = 0.05
 
-    --log(serializedState, "serializedState")
+    -- Original models and positions when the recording started
+    recorded = {}
+    -- JSON serialized version (single string) of recorded, to optimize save
+    recordedSerialized = "{}"
+    -- Actions are recorded based on model GUID, when later deleted and respawned during replay initialization
+    -- new model GUID needs to be mapped to the originaly recorded GUID.
+    guidMapping = {} -- TODO: needed with proper spawning?!?
+    -- All actions recorded
+    actions = {}
+    -- List of all recorded actions in JSON serialized form
+    actionsSerialized = {}
+    -- Current action
+    action = {}
+    -- Action index during replay, first action = 1
+    actionIndex = 1
+    -- State of recording 0=before recording started, 1=recording in progress, 2=replay
+    recordState = 0
 
     if serializedState != "" then
-      local start = os.time()
-
+      local time = os.time()
       local start, ending = string.find(serializedState, "([^|]+)")
       recordedSerialized = string.sub(serializedState, start, ending)
-      -- log(recordedSerialized, "recordedSerialized")
 
       start, ending = string.find(serializedState, "([^|]+)", ending + 1)
       actionsSerialized = string.sub(serializedState, start, ending)
-      -- log(actionsSerialized, "actionsSerialized")
 
       local dynamicSerialized = string.sub(serializedState, ending + 2)
-      -- log(dynamicSerialized, "dynamicSerialized")
-
-      log(os.difftime(os.time(), start), "Split strings")
+      log(os.time() - time, "Split")
 
       recorded = JSON.decode(recordedSerialized)
-      log(os.time() - start, "Decode recorded")
+      log(os.time() - time, "JSON.decode(recordedSerialized)")
 
-      log(actionsSerialized, "actionsSerialized")
       actions = JSON.decode(actionsSerialized)
-      log(os.time() - start, "Decode actions")
-      log(actions, "Decoded actions")
+      log(os.time() - time, "JSON.decode(actionsSerialized)")
 
       local dynamic = JSON.decode(dynamicSerialized)
-      log(dynamic, "Decoded dynamic")
-
       guidMapping = dynamic.guidMapping
       action = dynamic.action
       actionIndex = dynamic.actionIndex
       recordState = dynamic.recordState
 
-      log(os.time() - start, "All variables initialized")
+      log(os.time() - time, "JSON.decode(dynamicSerialized)")
 
-      actionsSerialized = {}
+      actionsSerialized = {} -- TODO: init only needed if recording in progress
       for k, v in pairs(actions) do
-        table.insert(actionsSerialized, "{\"" .. k .. "\": " .. JSON.encode(v) .. "}")
+        table.insert(actionsSerialized, JSON.encode(v))
       end
 
-      log(os.time() - start, "Load time")
-    else
-      -- Original models and positions when the recording started
-      recorded = {}
-      -- JSON serialized version (single string) of recorded, to optimize save
-      recordedSerialized = "{}"
-      -- Actions are recorded based on model GUID, when later deleted and respawned during replay initialization
-      -- new model GUID needs to be mapped to the originaly recorded GUID.
-      guidMapping = {}
-
-      -- All actions recorded
-      actions = {}
-      -- List of all recorded actions in JSON serialized form
-      actionsSerialized = {}
-
-      -- Current action
-      action = {}
-      -- Action index during replay, first action = 1
-      actionIndex = 1
-      -- State of recording 0=before recording started, 1=recording in progress, 2=replay
-      recordState = 0
+      log(os.time() - time, "Total load time")
     end
 
     setupContextMenu()
@@ -231,8 +214,8 @@ function toInitial(player_color, menu_position)
     -- The model not deleted, move to starting position
     if item != nil then
       guidMapping[k] = k
-      item.setPositionSmooth(v.base.position, false, true)
-      item.setRotationSmooth(v.base.rotation, false, true)
+      item.setPositionSmooth(v.position, false, true)
+      item.setRotationSmooth(v.rotation, false, true)
     else -- Spawn the model at the starting position
       local object = localSpawn(v)
       guidMapping[k] = object.guid
@@ -367,49 +350,20 @@ end
 
 -- Privte helper function: Spawn a model
 function localSpawn(description)
-  local object = spawnObject(description.base)
-  object.setCustomObject(description.custom)
-  object.setColorTint(description.base.tint)
-  object.setName(description.base.name)
-  object.setDescription(description.base.description)
+  local object = spawnObjectJSON(description)
   object.addTag("recorded")
-
-  for k, v in pairs(description.children) do
-    local child = localSpawn(v)
-    object.addAttachment(child)
-  end
 
   return object
 end
 
 -- Privte helper function: Format info needed to respawn model
 function getSpawnInfo(object)
-  local tmp = {
-    custom = object.getCustomObject(),
-    base = {
-      type = object.name,
-      position = object.getPosition(),
-      rotation = object.getRotation(),
-      scale = object.getScale(),
-      tint = object.getColorTint(),
-      description = object.getDescription(),
-      name = object.getName()
-    },
-    children = {}
+  return {
+    json = object.getJSON(false),
+    position = object.getPosition(),
+    rotation = object.getRotation(),
+    scale = object.getScale(),
   }
-
-  -- removing attachments is the only way to get all info on attached object
-  for k, v in pairs(object.removeAttachments()) do
-    -- load the detached object via the GUID
-    local childObject = getObjectFromGUID(v.guid)
-    -- Save data needed to respawn the object
-    local child = getSpawnInfo(childObject)
-    table.insert(tmp.children, k, child)
-    -- re-attach the child
-    object.addAttachment(v)
-  end
-
-  return tmp
 end
 
 
