@@ -24,7 +24,7 @@ end
 --   destroyed = false
 -- }
 
-function onLoad()
+function onLoad(serializedState)
     self.UI.hide("recordActionPanel")
 
     inches = 2.54
@@ -32,25 +32,90 @@ function onLoad()
     elevation = 0.2
     thickness = 0.05
 
+    --log(serializedState, "serializedState")
 
-    -- Original models and positions when the recording started
-    recorded = {}
-    -- Actions are recorded based on model GUID, when later deleted and respawned during replay initialization
-    -- new model GUID needs to be mapped to the originaly recorded GUID.
-    guidMapping = {}
+    if serializedState != "" then
+      local start = os.time()
 
-    -- All actions recorded
-    actions = {}
-    -- Current action
-    action = {}
-    -- Action index during replay, first action = 1
-    actionIndex = 1
-    -- State of recording 0=before recording started, 1=recording in progress, 2=replay
-    recordState = 0
+      local start, ending = string.find(serializedState, "([^|]+)")
+      recordedSerialized = string.sub(serializedState, start, ending)
+      -- log(recordedSerialized, "recordedSerialized")
+
+      start, ending = string.find(serializedState, "([^|]+)", ending + 1)
+      actionsSerialized = string.sub(serializedState, start, ending)
+      -- log(actionsSerialized, "actionsSerialized")
+
+      local dynamicSerialized = string.sub(serializedState, ending + 2)
+      -- log(dynamicSerialized, "dynamicSerialized")
+
+      log(os.difftime(os.time(), start), "Split strings")
+
+      recorded = JSON.decode(recordedSerialized)
+      log(os.time() - start, "Decode recorded")
+
+      log(actionsSerialized, "actionsSerialized")
+      actions = JSON.decode(actionsSerialized)
+      log(os.time() - start, "Decode actions")
+      log(actions, "Decoded actions")
+
+      local dynamic = JSON.decode(dynamicSerialized)
+      log(dynamic, "Decoded dynamic")
+
+      guidMapping = dynamic.guidMapping
+      action = dynamic.action
+      actionIndex = dynamic.actionIndex
+      recordState = dynamic.recordState
+
+      log(os.time() - start, "All variables initialized")
+
+      actionsSerialized = {}
+      for k, v in pairs(actions) do
+        table.insert(actionsSerialized, "{\"" .. k .. "\": " .. JSON.encode(v) .. "}")
+      end
+
+      log(os.time() - start, "Load time")
+    else
+      -- Original models and positions when the recording started
+      recorded = {}
+      -- JSON serialized version (single string) of recorded, to optimize save
+      recordedSerialized = "{}"
+      -- Actions are recorded based on model GUID, when later deleted and respawned during replay initialization
+      -- new model GUID needs to be mapped to the originaly recorded GUID.
+      guidMapping = {}
+
+      -- All actions recorded
+      actions = {}
+      -- List of all recorded actions in JSON serialized form
+      actionsSerialized = {}
+
+      -- Current action
+      action = {}
+      -- Action index during replay, first action = 1
+      actionIndex = 1
+      -- State of recording 0=before recording started, 1=recording in progress, 2=replay
+      recordState = 0
+    end
 
     setupContextMenu()
     addHotkey("Record action", recordAction, false)
     addHotkey("Next action", nextAction, false)
+    self.UI.hide("loadingPanel")
+end
+
+function onSave()
+  local start = os.clock()
+  local state = recordedSerialized .. "|" .. serializeActions() .. "|" .. JSON.encode({
+    guidMapping = guidMapping,
+    action = action,
+    actionIndex = actionIndex,
+    recordState = recordState,
+  })
+  log(os.clock() - start, "State creation time")
+  return state
+end
+
+function serializeActions()
+  return "[" .. table.concat(actionsSerialized, ",") .. "]"
 end
 
 function setupContextMenu()
@@ -103,6 +168,7 @@ function saveInitial(player_color, menu_position)
     recorded[v.guid] = getSpawnInfo(v)
   end
 
+  recordedSerialized = JSON.encode(recorded)
   recordState = 1
   setupContextMenu()
 end
@@ -125,14 +191,14 @@ end
 
 -- Called by action input field when edited
 function cacheActionText(player, text)
-  log(text, "onEndEdit")
   action.text = text
 end
 
 -- User saved action, triggered from UI
 function recordActionSave(player)
-  log(action, "save")
   actions[actionIndex] = action
+  table.insert(actionsSerialized, JSON.encode(action))
+
   action = {}
   actionIndex = actionIndex + 1
 
@@ -183,7 +249,6 @@ function nextAction(color)
 
   -- remove all models marked as killed in previous action
   deleteDead()
-
   local action = actions[actionIndex]
 
   -- If we reached the end of the replay
