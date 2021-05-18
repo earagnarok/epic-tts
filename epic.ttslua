@@ -6,75 +6,256 @@ function onUpdate ()
     --[[ print('onUpdate loop!') --]]
 end
 
--- action = {
---   spawn = {
---     json = object.getObjectJson(),
---     position = object.getPosition(),
---     rotation = object.getRotation(),
---     scale = object.getScale()
---   }
---   move = {
---     position = Table,
---     rotation = Table
---   }
---   destroyed = false
--- }
+function createRecordedModels()
+  local self = {
+    initialModels = {}, -- List of all GUIDs pressent when the recording started
+    initial = true, -- Boolean if recording has started
+    models = {},
+    clones = {},
+    modelIndex = {},
+    json = "{}",
+    dirty = false
+  }
+
+  local getFullSpawnInfo = function(model, modelId) -- private
+    return {
+      json = model.getJSON(false),
+      position = model.getPosition(),
+      rotation = model.getRotation(),
+      scale = model.getScale(),
+      identity = modelId,
+      guid = model.guid
+    }
+  end
+
+  local getCloneSpawnInfo = function(model, cloneOf) -- private
+    return {
+      cloneOf = cloneOf,
+      position = model.getPosition(),
+      rotation = model.getRotation(),
+      scale = model.getScale()
+    }
+  end
+
+  local objectIdentity = function(model) -- private
+    return model.getName() -- TODO add uniqueness
+  end
+
+  local startRecording = function()
+    self.initial = false
+  end
+
+  local add = function(model)
+    self.dirty = true
+    local modelId = objectIdentity(model)
+    local cloneOf = self.modelIndex[modelId]
+    if cloneOf != nil then
+      self.clones[model.guid] = getCloneSpawnInfo(model, cloneOf)
+    else
+      self.modelIndex[modelId] = model.guid
+      self.models[model.guid] = getFullSpawnInfo(model, modelId)
+    end
+
+    if self.initial then
+      table.insert(self.initialModels, model.guid)
+    end
+  end
+
+  local initialModels = function()
+    return self.initialModels
+  end
+
+  local getModelJson = function(guid)
+    local model = self.models[guid]
+    if (model != null) then
+      return model
+    else
+      local clonedModel = self.clones[guid]
+      local modelJson = self.models[clonedModel.cloneOf].json
+      clonedModel.json = string.gsub(modelJson, clonedModel.cloneOf, guid)
+      return clonedModel
+    end
+  end
+
+  local save = function()
+    if self.dirty then
+      self.json = JSON.encode({
+        initialModels = self.initialModels,
+        initial = self.initial,
+        models = self.models,
+        clones = self.clones
+      })
+      self.dirty = false
+    end
+
+    return self.json
+  end
+
+  local load = function(json)
+    if json != "" and json != "{}" then
+      local decoded = JSON.decode(json)
+      self.models = decoded.models
+      self.clones = decoded.clones
+      self.initialModels = decoded.initialModels
+      self.initial = decoded.initial
+      self.dirty = false
+      self.json = json
+
+      for _, value in pairs(self.models) do
+        self.modelIndex[value.identity] = value.guid
+      end
+    end
+  end
+
+  return {
+    add = add,
+    getModelJson = getModelJson,
+    initialModels = initialModels,
+    load = load,
+    save = save,
+    startRecording = startRecording
+  }
+end
+
+function createActionsList(recordedModels)
+  -- action = {
+  --   spawn = {
+  --     json = object.getObjectJson(),
+  --     position = object.getPosition(),
+  --     rotation = object.getRotation(),
+  --     scale = object.getScale()
+  --   }
+  --   move = {
+  --     position = Table,
+  --     rotation = Table
+  --   }
+  --   destroyed = false
+  -- }
+
+  local self = {
+    recordedModels = recordedModels,
+    actionsSerialized = {},
+    actions = {},
+    action = {}
+  }
+
+  local save = function()
+    return "{\"actions\": [" .. table.concat(self.actionsSerialized, ",") .. "], \"action\": " .. JSON.encode(action) .. "}"
+  end
+
+  local load = function(json)
+    local decoded = JSON.decode(json)
+    self.actions = decoded.actions
+
+    if decoded.action != nil then
+      self.action = decoded.action
+    end
+
+    self.actionsSerialized = {} -- TODO: init only needed if recording in progress
+    for _, v in pairs(self.actions) do
+      table.insert(self.actionsSerialized, JSON.encode(v))
+    end
+
+  end
+
+  local saveAction = function()
+    table.insert(self.actions, self.action)
+    table.insert(self.actionsSerialized, JSON.encode(self.action))
+    self.recordedModels.save()
+
+    self.action = {}
+  end
+
+  local recordActionText = function(text)
+    self.action.text = text
+  end
+
+  local recordMove = function(object)
+    if self.action[object.guid] != nil then
+      self.action[object.guid].move = {
+        position = object.getPosition(),
+        rotation = object.getRotation()
+      }
+    else
+      self.action[object.guid] = {
+        move = {
+          position = object.getPosition(),
+          rotation = object.getRotation()
+        }
+      }
+    end
+  end
+
+  local recordSpawn = function(object)
+    recordedModels.add(object)
+
+    if self.action[object.guid] != nil then
+      self.action[object.guid].spawn = object.guid
+    else
+      self.action[object.guid] = {
+        spawn = object.guid
+      }
+    end
+  end
+
+  local recordDelete = function(object)
+    if self.action[object.guid] != nil then
+      self.action[object.guid].destroyed = true
+    else
+      self.action[object.guid] = {
+        destroyed = true
+      }
+    end
+  end
+
+  local getAction = function(actionIndex)
+    return self.actions[actionIndex]
+  end
+
+  return {
+    getAction = getAction,
+    recordActionText = recordActionText,
+    recordMove = recordMove,
+    recordSpawn = recordSpawn,
+    recordDelete = recordDelete,
+    load = load,
+    save = save,
+    saveAction = saveAction
+  }
+end
 
 function onLoad(serializedState)
     self.UI.hide("recordActionPanel")
 
+    -- ZoC variables
     inches = 2.54
     rangeToolRanges = {5, 10, 15, 20, 30, 45, 60, 75, 15, 0}
     elevation = 0.2
     thickness = 0.05
 
-    -- Original models and positions when the recording started
-    recorded = {}
-    -- JSON serialized version (single string) of recorded, to optimize save
-    recordedSerialized = "{}"
-    -- Actions are recorded based on model GUID, when later deleted and respawned during replay initialization
-    -- new model GUID needs to be mapped to the originaly recorded GUID.
-    guidMapping = {} -- TODO: needed with proper spawning?!?
-    -- All actions recorded
-    actions = {}
-    -- List of all recorded actions in JSON serialized form
-    actionsSerialized = {}
-    -- Current action
-    action = {}
-    -- Action index during replay, first action = 1
-    actionIndex = 1
-    -- State of recording 0=before recording started, 1=recording in progress, 2=replay
+    -- Battle report variables
+    recordedModels = createRecordedModels()
+    actions = createActionsList(recordedModels)
     recordState = 0
+    replayIndex = 1
 
     if serializedState != "" then
       local time = os.time()
       local start, ending = string.find(serializedState, "([^|]+)")
-      recordedSerialized = string.sub(serializedState, start, ending)
+      local recordedSerialized = string.sub(serializedState, start, ending)
 
       start, ending = string.find(serializedState, "([^|]+)", ending + 1)
-      actionsSerialized = string.sub(serializedState, start, ending)
+      local actionsSerialized = string.sub(serializedState, start, ending)
 
       local dynamicSerialized = string.sub(serializedState, ending + 2)
       log(os.time() - time, "Split")
 
-      recorded = JSON.decode(recordedSerialized)
-      log(os.time() - time, "JSON.decode(recordedSerialized)")
+      -- recordedModels.load(recordedSerialized)
+      -- actions.load(actionsSerialized)
 
-      actions = JSON.decode(actionsSerialized)
-      log(os.time() - time, "JSON.decode(actionsSerialized)")
-
-      local dynamic = JSON.decode(dynamicSerialized)
-      guidMapping = dynamic.guidMapping
-      action = dynamic.action
-      actionIndex = dynamic.actionIndex
-      recordState = dynamic.recordState
-
-      log(os.time() - time, "JSON.decode(dynamicSerialized)")
-
-      actionsSerialized = {} -- TODO: init only needed if recording in progress
-      for k, v in pairs(actions) do
-        table.insert(actionsSerialized, JSON.encode(v))
-      end
+      log(dynamicSerialized, "dynamicSerialized")
+      -- local dynamic = JSON.decode(dynamicSerialized)
+      -- recordState = dynamic
 
       log(os.time() - time, "Total load time")
     end
@@ -87,18 +268,11 @@ end
 
 function onSave()
   local start = os.clock()
-  local state = recordedSerialized .. "|" .. serializeActions() .. "|" .. JSON.encode({
-    guidMapping = guidMapping,
-    action = action,
-    actionIndex = actionIndex,
+  local state = recordedModels.save() .. "|" .. actions.save() .. "|" .. JSON.encode({ --TODO: pipe is not unique enough, may be in descriptions etc.
     recordState = recordState,
   })
   log(os.clock() - start, "State creation time")
   return state
-end
-
-function serializeActions()
-  return "[" .. table.concat(actionsSerialized, ",") .. "]"
 end
 
 function setupContextMenu()
@@ -148,10 +322,11 @@ function saveInitial(player_color, menu_position)
   items = getObjectsWithTag("recorded")
 
   for k, v in pairs(items) do
-    recorded[v.guid] = getSpawnInfo(v)
+    recordedModels.add(v)
   end
 
-  recordedSerialized = JSON.encode(recorded)
+  recordedModels.startRecording()
+  recordedModels.save()
   recordState = 1
   setupContextMenu()
 end
@@ -174,16 +349,12 @@ end
 
 -- Called by action input field when edited
 function cacheActionText(player, text)
-  action.text = text
+  actions.recordActionText(text)
 end
 
 -- User saved action, triggered from UI
 function recordActionSave(player)
-  actions[actionIndex] = action
-  table.insert(actionsSerialized, JSON.encode(action))
-
-  action = {}
-  actionIndex = actionIndex + 1
+  actions.saveAction()
 
   self.UI.hide("recordActionPanel")
   self.UI.setAttribute("recordActionText", "text", "")
@@ -197,30 +368,28 @@ end
 
 -- Move models to starting position and spawn deleted models
 function toInitial(player_color, menu_position)
-  -- delete all objects spawned during the game
+  -- delete all objects
   items = getObjectsWithTag("recorded")
   for k, v in pairs(items) do
-    if recorded[v.guid] == nil then
-      destroyObject(v)
-    end
+    destroyObject(v)
   end
 
-  -- Reset action index to play from first action
-  actionIndex = 1
-
-  for k, v in pairs(recorded) do
-    local item = getObjectFromGUID(k)
-
-    -- The model not deleted, move to starting position
-    if item != nil then
-      guidMapping[k] = k
-      item.setPositionSmooth(v.position, false, true)
-      item.setRotationSmooth(v.rotation, false, true)
-    else -- Spawn the model at the starting position
-      local object = localSpawn(v)
-      guidMapping[k] = object.guid
-    end
+  -- Spawn all initial models
+  local initial = recordedModels.initialModels()
+  for _, guid in pairs(initial) do
+    local json = recordedModels.getModelJson(guid)
+    localSpawn(json)
   end
+
+  replayIndex = 1
+end
+
+-- Privte helper function: Spawn a model
+function localSpawn(description)
+  local object = spawnObjectJSON(description)
+  object.addTag("recorded")
+
+  return object
 end
 
 -- Replay next action
@@ -232,7 +401,7 @@ function nextAction(color)
 
   -- remove all models marked as killed in previous action
   deleteDead()
-  local action = actions[actionIndex]
+  local action = actions.getAction(replayIndex)
 
   -- If we reached the end of the replay
   if action == nil then
@@ -244,16 +413,15 @@ function nextAction(color)
   broadcastToAll(action.text)
 
   -- Execute all recorded changes for this action
-  for k, v in pairs(action) do
+  for guid, v in pairs(action) do
     if k != "text" then
       local item
 
       -- Spawn the object if it is new for this action
       if v.spawn != nil then
         item = localSpawn(v.spawn)
-        guidMapping[k] = item.guid
       else -- or load it by GUID
-        item = getObjectFromGUID(guidMapping[k])
+        item = getObjectFromGUID(guid)
       end
 
       -- Move it, if moved
@@ -275,7 +443,7 @@ function nextAction(color)
   end
 
   -- Move on to next action
-  actionIndex = actionIndex + 1
+  replayIndex = replayIndex + 1
 end
 
 -- Delete all models marked as dead
@@ -289,81 +457,29 @@ end
 -- Record deleted models, called by the game
 function onObjectDestroy(object)
   if object.hasTag("recorded") and not object.hasTag("dead") and recordState == 1 then
-    if action[object.guid] != nil then
-      action[object.guid].destroyed = true
-    else
-      action[object.guid] = {
-        destroyed = true
-      }
-    end
+    actions.recordDelete(object)
   end
 end
 
 -- Record rotated models, called by the game
 function onObjectRotate(object, spin, flip, player_color, old_spin, old_flip)
   if object.hasTag("recorded") and recordState == 1 then
-    recordMove(object)
+    actions.recordMove(object)
   end
 end
 
 -- Record moved models, called by the game
 function onObjectDrop(colorName, object)
   if object.hasTag("recorded") and recordState == 1 then
-    recordMove(object)
+    actions.recordMove(object)
   end
 end
 
 -- record the initial position of the model if this was not part of the setup, eg BMs, Daemons, etc... called by the game
 function onObjectSpawn(object)
   if object.hasTag("recorded") and recordState == 1 then
-    recordSpawn(object)
+    actions.recordSpawn(object)
   end
-end
-
--- Privte helper function: record a move (rotation or position change)
-function recordMove(object)
-  if action[object.guid] != nil then
-    action[object.guid].move = {
-      position = object.getPosition(),
-      rotation = object.getRotation()
-    }
-  else
-    action[object.guid] = {
-      move = {
-        position = object.getPosition(),
-        rotation = object.getRotation()
-      }
-    }
-  end
-end
-
--- Privte helper function: Record info needed to respawn model on current action
-function recordSpawn(object)
-  if action[object.guid] != nil then
-    action[object.guid].spawn = getSpawnInfo(object)
-  else
-    action[object.guid] = {
-      spawn = getSpawnInfo(object)
-    }
-  end
-end
-
--- Privte helper function: Spawn a model
-function localSpawn(description)
-  local object = spawnObjectJSON(description)
-  object.addTag("recorded")
-
-  return object
-end
-
--- Privte helper function: Format info needed to respawn model
-function getSpawnInfo(object)
-  return {
-    json = object.getJSON(false),
-    position = object.getPosition(),
-    rotation = object.getRotation(),
-    scale = object.getScale(),
-  }
 end
 
 
@@ -413,14 +529,17 @@ function onScriptingButtonDown(index, color)
       end
     end
 end
+
 function compensatedThickness(object)
   return (thickness / object.getScale()["x"])
 end
+
 function hasRectangleBase(obj)
   local size = obj.getBoundsNormalized()["size"]
   local ratio = math.abs(size[1]/size[3])
   return ratio < 0.95 or ratio > 1.05
 end
+
 function circleZoc(obj, radius)
     local size = obj.getBoundsNormalized()["size"]
     local radiusFromCenter = radius + (math.max(size[1], size[3]) / 2)
@@ -429,18 +548,21 @@ function circleZoc(obj, radius)
     insertCircle(points, obj, radiusFromCenter, elevation + 1)
     return points
 end
+
 function circleFromCenter(obj, radius)
     local points = {}
     insertCircle(points, obj, radius, elevation)
     insertCircle(points, obj, radius, elevation + 1)
     return points
 end
+
 function rectangleZoc(obj, zoc)
   local points = {}
   insertRectangle(points, obj, elevation, zoc)
   insertRectangle(points, obj, elevation + 1, zoc)
   return points
 end
+
 function insertRectangle(points, obj, localElevation,  zoc)
   local width = obj.getBoundsNormalized()["size"][1]
   local height = obj.getBoundsNormalized()["size"][3]
@@ -458,6 +580,7 @@ function insertRectangle(points, obj, localElevation,  zoc)
       handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
   end
 end
+
 function insertCircle(points, object, radius, localElevation)
   for i = 0,36 do
     table.insert(points, globalToLocal(object, {
@@ -467,10 +590,12 @@ function insertCircle(points, object, radius, localElevation)
     }))
   end
 end
+
 function handleRactanglePoint(result, object, point)
   local rotated = rotateRoundY(math.rad(-object.getRotation().y + 360), point)
   table.insert(result, globalToLocal(object, rotated))
 end
+
 function rotateRoundY(angle, point)
   return {
     point[1] * math.cos(angle) - point[3] * math.sin(angle),
@@ -478,6 +603,7 @@ function rotateRoundY(angle, point)
     point[1] * math.sin(angle) + point[3] * math.cos(angle)
   }
 end
+
 function globalToLocal(object, coordinates)
   return object.positionToLocal({
     coordinates[1] + object.getPosition().x,
