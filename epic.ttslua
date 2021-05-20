@@ -285,19 +285,27 @@ function onLoad(serializedState)
       -- log(serializedState, "Serialized state")
       -- TODO: Use coroutine to load in the background
       local time = os.time()
-      local start, ending = string.find(serializedState, "([^|@|]+)")
-      local recordedSerialized = string.sub(serializedState, start, ending)
-      -- log(recordedSerialized, "recordedSerialized")
+      -- local start, ending = string.find(serializedState, "([^|@|]+)")
+      local substringStart = 0
+      local start, ending = string.find(serializedState, "|@|", 0, true)
+      local recordedSerialized = string.sub(serializedState, substringStart, start - 1)
+      substringStart = ending + 1
 
-      start, ending = string.find(serializedState, "([^|@|]+)", ending + 1)
-      local actionsSerialized = string.sub(serializedState, start, ending)
-      -- log(actionsSerialized, "actionsSerialized")
+      start, ending = string.find(serializedState, "|@|", substringStart, true)
+      local actionsSerialized = string.sub(serializedState, substringStart, start - 1)
+      substringStart = ending + 1
+      --log(actionsSerialized, "actionsSerialized")
 
-      local dynamicSerialized = string.sub(serializedState, ending + 4)
+      local dynamicSerialized = string.sub(serializedState, substringStart)
       -- log(dynamicSerialized, "dynamicSerialized")
 
+      log(os.time() - time, "Split string")
+
       recordedModels.load(recordedSerialized)
+      log(os.time() - time, "Loaded recorded models")
+
       actions.load(actionsSerialized)
+      log(os.time() - time, "Loaded actions")
 
       local dynamic = JSON.decode(dynamicSerialized)
       recordState = dynamic.recordState
