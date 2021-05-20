@@ -113,7 +113,7 @@ function createRecordedModels()
     return model
   end
 
-  local save = function()
+  local save = function() -- TODO: Dont save during loading...
     if self.dirty then
       self.json = table.concat(self.modelsJson, "|#|") .. "|#|" .. JSON.encode({
         initialModels = self.initialModels,
@@ -127,7 +127,7 @@ function createRecordedModels()
 
   local load = function(json)
     if json != "" and json != "|#|{}" then
-      log(json, "Json")
+      -- log(json, "Json")
       log(string.len(json), "Json size")
 
       local index = 0
@@ -136,9 +136,9 @@ function createRecordedModels()
       while start != nil and start != 1 do
         log("Index: " .. index .. ", start:" .. start .. ", ending: " .. ending)
         local modelJson = string.sub(json, index, start - 1)
-        log(string.len(modelJson), "Model json")
+        -- log(string.len(modelJson), "Model json")
         local model = JSON.decode(modelJson)
-        log(model, "Deserialized model")
+        -- log(model, "Deserialized model")
         self.models[model.guid] = model
         self.modelsJson[model.guid] = modelJson
 
@@ -148,9 +148,17 @@ function createRecordedModels()
 
         index = ending + 1
         start, ending = string.find(json, "|#|", index, true)
+
+        coroutine.yield(0)
       end
 
-      rest = string.sub(json, index + 1)
+      local rest = string.sub(json, index + 1)
+      if ending != nil then
+        rest = string.sub(json, ending + 1)
+      else
+        rest = string.sub(json, index + 1)
+      end
+
       -- log(rest, "Models json part")
 
       local decoded = JSON.decode(rest)
@@ -159,6 +167,8 @@ function createRecordedModels()
       self.dirty = false
       self.json = json
     end
+
+    log("Finished loading models")
   end
 
   return {
@@ -308,7 +318,7 @@ function onLoad(serializedState)
       -- local start, ending = string.find(serializedState, "([^|@|]+)")
       local substringStart = 0
       local start, ending = string.find(serializedState, "|@|", 0, true)
-      local recordedSerialized = string.sub(serializedState, substringStart, start - 1)
+      recordedSerialized = string.sub(serializedState, substringStart, start - 1)
       substringStart = ending + 1
 
       start, ending = string.find(serializedState, "|@|", substringStart, true)
@@ -322,7 +332,8 @@ function onLoad(serializedState)
 
       log(os.time() - time, "Split string")
 
-      recordedModels.load(recordedSerialized)
+      startLuaCoroutine(Global, "loadRecorded")
+      -- recordedModels.load(recordedSerialized)
       log(os.time() - time, "Loaded recorded models")
 
       actions.load(actionsSerialized)
@@ -337,7 +348,12 @@ function onLoad(serializedState)
     setupContextMenu()
     addHotkey("Record action", recordAction, false)
     addHotkey("Next action", nextAction, false)
-    self.UI.hide("loadingPanel")
+end
+
+function loadRecorded()
+  recordedModels.load(recordedSerialized)
+  self.UI.hide("loadingPanel")
+  return 1
 end
 
 function onSave()
@@ -345,6 +361,7 @@ function onSave()
   local state = recordedModels.save() .. "|@|" .. actions.save() .. "|@|" .. JSON.encode({ --TODO: pipe is not unique enough, may be in descriptions etc.
     recordState = recordState,
   })
+  -- log(state, "Save state")
   log(os.clock() - start, "State creation time")
   return state
 end
@@ -671,6 +688,7 @@ function insertCircle(points, object, radius, localElevation)
     table.insert(points, globalToLocal(object, {
       (math.cos(math.rad(i*10)) * radius),
       localElevation,
+      (math.sin(math.rad(i*10)) * radius)
       (math.sin(math.rad(i*10)) * radius)
     }))
   end
