@@ -33,11 +33,11 @@ function createRecordedModels()
   local self = {
     initialModels = {}, -- List of all GUIDs pressent when the recording started
     initial = true, -- Boolean if recording has started
-    models = {},
-    clones = {},
+    models = {}, -- List of all models on the table (contains full or clone model info)
+    modelsJson = {}, -- Serialized models
     modelIndex = {},
     json = "{}",
-    dirty = false
+    dirty = true
   }
 
   local getFullSpawnInfo = function(model, modelId) -- private
@@ -56,7 +56,8 @@ function createRecordedModels()
       cloneOf = cloneOf,
       position = model.getPosition(),
       rotation = model.getRotation(),
-      scale = model.getScale()
+      scale = model.getScale(),
+      guid = model.guid
     }
   end
 
@@ -84,11 +85,14 @@ function createRecordedModels()
     local modelId = objectIdentity(model)
     local cloneOf = self.modelIndex[modelId]
     if cloneOf != nil then
-      self.clones[model.guid] = getCloneSpawnInfo(model, cloneOf)
+      self.models[model.guid] = getCloneSpawnInfo(model, cloneOf)
     else
       self.modelIndex[modelId] = model.guid
       self.models[model.guid] = getFullSpawnInfo(model, modelId)
     end
+
+    -- save a serialized copy
+    table.insert(self.modelsJson, JSON.encode(self.models[model.guid]))
 
     if self.initial then
       table.insert(self.initialModels, model.guid)
@@ -101,23 +105,19 @@ function createRecordedModels()
 
   local getModelJson = function(guid)
     local model = self.models[guid]
-    if (model != null) then
-      return model
-    else
-      local clonedModel = self.clones[guid]
-      local modelJson = self.models[clonedModel.cloneOf].json
-      clonedModel.json = string.gsub(modelJson, clonedModel.cloneOf, guid)
-      return clonedModel
+    if (model.cloneOf != null) then
+      local originalJson = self.models[model.cloneOf].json
+      model.json = string.gsub(originalJson, clonedModel.cloneOf, guid)
     end
+
+    return model
   end
 
   local save = function()
     if self.dirty then
-      self.json = JSON.encode({
+      self.json = table.concat(self.modelsJson, "|#|") .. "|#|" .. JSON.encode({
         initialModels = self.initialModels,
-        initial = self.initial,
-        models = self.models,
-        clones = self.clones
+        initial = self.initial
       })
       self.dirty = false
     end
@@ -126,18 +126,38 @@ function createRecordedModels()
   end
 
   local load = function(json)
-    if json != "" and json != "{}" then
-      local decoded = JSON.decode(json)
-      self.models = decoded.models
-      self.clones = decoded.clones
+    if json != "" and json != "|#|{}" then
+      log(json, "Json")
+      log(string.len(json), "Json size")
+
+      local index = 0
+      local start, ending = string.find(json, "|#|", 0, true)
+
+      while start != nil and start != 1 do
+        log("Index: " .. index .. ", start:" .. start .. ", ending: " .. ending)
+        local modelJson = string.sub(json, index, start - 1)
+        log(string.len(modelJson), "Model json")
+        local model = JSON.decode(modelJson)
+        log(model, "Deserialized model")
+        self.models[model.guid] = model
+        self.modelsJson[model.guid] = modelJson
+
+        if model.identity != nil then
+          self.modelIndex[model.identity] = model.guid
+        end
+
+        index = ending + 1
+        start, ending = string.find(json, "|#|", index, true)
+      end
+
+      rest = string.sub(json, index + 1)
+      -- log(rest, "Models json part")
+
+      local decoded = JSON.decode(rest)
       self.initialModels = decoded.initialModels
       self.initial = decoded.initial
       self.dirty = false
       self.json = json
-
-      for _, value in pairs(self.models) do
-        self.modelIndex[value.identity] = value.guid
-      end
     end
   end
 
@@ -296,6 +316,7 @@ function onLoad(serializedState)
       substringStart = ending + 1
       --log(actionsSerialized, "actionsSerialized")
 
+      start, ending = string.find(serializedState, "|@|", substringStart, true)
       local dynamicSerialized = string.sub(serializedState, substringStart)
       -- log(dynamicSerialized, "dynamicSerialized")
 
