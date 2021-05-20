@@ -6,6 +6,29 @@ function onUpdate ()
     --[[ print('onUpdate loop!') --]]
 end
 
+function createHash()
+  local self = {
+    hash = 0
+  }
+
+  local update = function(string)
+    if string != nil then
+      for idx = 1, #string do
+        self.hash = bit32.bxor(self.hash, bit32.lshift(self.hash, 5) + bit32.rshift(self.hash, 2) + string:byte(idx))
+      end
+    end
+  end
+
+  local result = function()
+    return "" .. self.hash
+  end
+
+  return {
+    update = update,
+    result = result
+  }
+end
+
 function createRecordedModels()
   local self = {
     initialModels = {}, -- List of all GUIDs pressent when the recording started
@@ -38,7 +61,18 @@ function createRecordedModels()
   end
 
   local objectIdentity = function(model) -- private
-    return model.getName() -- TODO add uniqueness
+    local hash = createHash()
+    hash.update(model.getName())
+    hash.update(model.getDescription())
+    hash.update(model.getColorTint():toHex(false))
+    hash.update(model.getCustomObject()["mesh"])
+    for _, child in pairs(model.getAttachments()) do
+      hash.update(child["name"])
+      hash.update(child["description"])
+      -- TODO: Is it possible to access the child mesh? Detach?
+    end
+
+    return hash.result()
   end
 
   local startRecording = function()
@@ -286,6 +320,9 @@ function setupContextMenu()
   elseif recordState == 1 then
     addContextMenuItem("Record action", recordAction)
     addContextMenuItem("End recording", finalizeRecording)
+  elseif actions.getAction(replayIndex) == nil then
+    addContextMenuItem("Restart replay", toInitial)
+    addContextMenuItem("Resume recording", resumeRecording)
   else
     addContextMenuItem("Restart replay", toInitial)
     addContextMenuItem("Show next", nextAction)
@@ -334,6 +371,12 @@ end
 -- End the recording
 function finalizeRecording()
   recordState = 2
+  setupContextMenu()
+end
+
+-- Resume the recording
+function resumeRecording()
+  recordState = 1
   setupContextMenu()
 end
 
@@ -406,6 +449,7 @@ function nextAction(color)
   -- If we reached the end of the replay
   if action == nil then
     broadcastToAll("End of recording")
+    setupContextMenu()
     return
   end
 
