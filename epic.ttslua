@@ -196,7 +196,6 @@ function createActionsList(recordedModels)
     table.insert(self.actions, self.action)
     table.insert(self.actionsSerialized, JSON.encode(self.action))
     self.recordedModels.save()
-
     self.action = {}
   end
 
@@ -234,7 +233,11 @@ function createActionsList(recordedModels)
 
   local recordDelete = function(object)
     if self.action[object.guid] != nil then
-      self.action[object.guid].destroyed = true
+      if self.action[object.guid].spawn != nil then -- if the object was spawned during this action
+        self.action[object.guid] = nil -- remove the entire action for this model
+      else
+        self.action[object.guid].destroyed = true
+      end
     else
       self.action[object.guid] = {
         destroyed = true
@@ -246,12 +249,17 @@ function createActionsList(recordedModels)
     return self.actions[actionIndex]
   end
 
+  local resetCurrent = function()
+    self.action = {}
+  end
+
   return {
     getAction = getAction,
     recordActionText = recordActionText,
     recordMove = recordMove,
     recordSpawn = recordSpawn,
     recordDelete = recordDelete,
+    resetCurrent = resetCurrent,
     load = load,
     save = save,
     saveAction = saveAction
@@ -274,22 +282,25 @@ function onLoad(serializedState)
     replayIndex = 1
 
     if serializedState != "" then
+      -- log(serializedState, "Serialized state")
+      -- TODO: Use coroutine to load in the background
       local time = os.time()
-      local start, ending = string.find(serializedState, "([^|]+)")
+      local start, ending = string.find(serializedState, "([^|@|]+)")
       local recordedSerialized = string.sub(serializedState, start, ending)
+      -- log(recordedSerialized, "recordedSerialized")
 
-      start, ending = string.find(serializedState, "([^|]+)", ending + 1)
+      start, ending = string.find(serializedState, "([^|@|]+)", ending + 1)
       local actionsSerialized = string.sub(serializedState, start, ending)
+      -- log(actionsSerialized, "actionsSerialized")
 
-      local dynamicSerialized = string.sub(serializedState, ending + 2)
-      log(os.time() - time, "Split")
+      local dynamicSerialized = string.sub(serializedState, ending + 4)
+      -- log(dynamicSerialized, "dynamicSerialized")
 
-      -- recordedModels.load(recordedSerialized)
-      -- actions.load(actionsSerialized)
+      recordedModels.load(recordedSerialized)
+      actions.load(actionsSerialized)
 
-      log(dynamicSerialized, "dynamicSerialized")
-      -- local dynamic = JSON.decode(dynamicSerialized)
-      -- recordState = dynamic
+      local dynamic = JSON.decode(dynamicSerialized)
+      recordState = dynamic.recordState
 
       log(os.time() - time, "Total load time")
     end
@@ -302,7 +313,7 @@ end
 
 function onSave()
   local start = os.clock()
-  local state = recordedModels.save() .. "|" .. actions.save() .. "|" .. JSON.encode({ --TODO: pipe is not unique enough, may be in descriptions etc.
+  local state = recordedModels.save() .. "|@|" .. actions.save() .. "|@|" .. JSON.encode({ --TODO: pipe is not unique enough, may be in descriptions etc.
     recordState = recordState,
   })
   log(os.clock() - start, "State creation time")
@@ -377,6 +388,7 @@ end
 -- Resume the recording
 function resumeRecording()
   recordState = 1
+  actions.resetCurrent()
   setupContextMenu()
 end
 
@@ -463,7 +475,7 @@ function nextAction(color)
 
       -- Spawn the object if it is new for this action
       if v.spawn != nil then
-        item = localSpawn(v.spawn)
+        item = localSpawn(recordedModels.getModelJson(v.spawn))
       else -- or load it by GUID
         item = getObjectFromGUID(guid)
       end
