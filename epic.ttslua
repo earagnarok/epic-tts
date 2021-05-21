@@ -6,6 +6,7 @@ function onUpdate ()
     --[[ print('onUpdate loop!') --]]
 end
 
+-- Hash object used to calculate hashes over strings
 function createHash()
   local self = {
     hash = 0
@@ -29,17 +30,19 @@ function createHash()
   }
 end
 
+-- Object holding all models recorded
 function createRecordedModels()
   local self = {
     initialModels = {}, -- List of all GUIDs pressent when the recording started
-    initial = true, -- Boolean if recording has started
+    initial = true, -- Boolean if recording has started, once started models should not be added to the initialModels table
     models = {}, -- List of all models on the table (contains full or clone model info)
     modelsJson = {}, -- Serialized models
-    modelIndex = {},
-    json = "{}",
-    dirty = true
+    modelIndex = {}, -- Map<ObjectIdentity, GUID> to lookup original GUID of a clone
+    json = "{}", -- Serialized state
+    dirty = true -- If the serialized state needs to be updated
   }
 
+  -- Get an object representing a full description of the model
   local getFullSpawnInfo = function(model, modelId) -- private
     return {
       json = model.getJSON(false),
@@ -51,6 +54,7 @@ function createRecordedModels()
     }
   end
 
+  -- Get an object representing a description of the model which is a clone of an already recorded model
   local getCloneSpawnInfo = function(model, cloneOf) -- private
     return {
       cloneOf = cloneOf,
@@ -61,6 +65,7 @@ function createRecordedModels()
     }
   end
 
+  -- Get the identity for this object in order to find cloned models
   local objectIdentity = function(model) -- private
     local hash = createHash()
     hash.update(model.getName())
@@ -76,10 +81,12 @@ function createRecordedModels()
     return hash.result()
   end
 
+  -- Mark recording as started, no more models should be added to the initialModels table
   local startRecording = function()
     self.initial = false
   end
 
+  -- Add a model to the recording
   local add = function(model)
     self.dirty = true
     local modelId = objectIdentity(model)
@@ -99,10 +106,12 @@ function createRecordedModels()
     end
   end
 
+  -- returns a list of GUIDs for all models pressent when the recording was started
   local initialModels = function()
     return self.initialModels
   end
 
+  -- returns the information needed to spawn the model with the given GUID
   local getModelJson = function(guid)
     local model = self.models[guid]
     if (model.cloneOf != null) then
@@ -113,6 +122,7 @@ function createRecordedModels()
     return model
   end
 
+  -- Get a string representation of the save state
   local save = function() -- TODO: Dont save during loading...
     if self.dirty then
       self.json = table.concat(self.modelsJson, "|#|") .. "|#|" .. JSON.encode({
@@ -125,14 +135,16 @@ function createRecordedModels()
     return self.json
   end
 
+  -- Load a save, called as part of a coroutine to avoid locking up TTS
   local load = function(json)
-    if json != "" and json != "|#|{}" then
+    if json != "" then
       -- log(json, "Json")
       log(string.len(json), "Json size")
 
       local index = 0
       local start, ending = string.find(json, "|#|", 0, true)
 
+      -- Loop over the save to find each model, separated by |#|
       while start != nil and start != 1 do
         log("Index: " .. index .. ", start:" .. start .. ", ending: " .. ending)
         local modelJson = string.sub(json, index, start - 1)
@@ -152,14 +164,13 @@ function createRecordedModels()
         coroutine.yield(0)
       end
 
+      -- The final part of the string is a json object containing initialModels and initial state
       local rest = string.sub(json, index + 1)
-      if ending != nil then
+      if ending != nil then -- if save does not contain models, else ending is nill
         rest = string.sub(json, ending + 1)
       else
         rest = string.sub(json, index + 1)
       end
-
-      -- log(rest, "Models json part")
 
       local decoded = JSON.decode(rest)
       self.initialModels = decoded.initialModels
@@ -183,24 +194,19 @@ end
 
 function createActionsList(recordedModels)
   -- action = {
-  --   spawn = {
-  --     json = object.getObjectJson(),
-  --     position = object.getPosition(),
-  --     rotation = object.getRotation(),
-  --     scale = object.getScale()
-  --   }
+  --   spawn = guid, -- reference to object in recordedModels
   --   move = {
   --     position = Table,
   --     rotation = Table
-  --   }
+  --   },
   --   destroyed = false
   -- }
 
   local self = {
-    recordedModels = recordedModels,
-    actionsSerialized = {},
-    actions = {},
-    action = {}
+    recordedModels = recordedModels, -- reference to the recorded
+    actions = {}, -- list of all recorded actions
+    actionsSerialized = {}, -- list of all recorded action in a serialized format
+    action = {} -- current action
   }
 
   local save = function()
@@ -215,24 +221,27 @@ function createActionsList(recordedModels)
       self.action = decoded.action
     end
 
-    self.actionsSerialized = {} -- TODO: init only needed if recording in progress
+    -- Recreate the serialized state of all actions
     for _, v in pairs(self.actions) do
       table.insert(self.actionsSerialized, JSON.encode(v))
     end
 
   end
 
+  -- Save current action and start on a new one
   local saveAction = function()
     table.insert(self.actions, self.action)
     table.insert(self.actionsSerialized, JSON.encode(self.action))
     self.recordedModels.save()
-    self.action = {}
+    resetCurrent()
   end
 
+  -- Update current action with text
   local recordActionText = function(text)
     self.action.text = text
   end
 
+  -- Update current action with a model move
   local recordMove = function(object)
     if self.action[object.guid] != nil then
       self.action[object.guid].move = {
@@ -249,6 +258,7 @@ function createActionsList(recordedModels)
     end
   end
 
+  -- update current action with a newly spawned model
   local recordSpawn = function(object)
     recordedModels.add(object)
 
@@ -261,6 +271,7 @@ function createActionsList(recordedModels)
     end
   end
 
+  -- Update current action with a deleted model
   local recordDelete = function(object)
     if self.action[object.guid] != nil then
       if self.action[object.guid].spawn != nil then -- if the object was spawned during this action
@@ -275,10 +286,12 @@ function createActionsList(recordedModels)
     end
   end
 
+  -- Get the action at index
   local getAction = function(actionIndex)
     return self.actions[actionIndex]
   end
 
+  -- Reset current action
   local resetCurrent = function()
     self.action = {}
   end
@@ -312,11 +325,9 @@ function onLoad(serializedState)
     replayIndex = 1
 
     if serializedState != "" then
-      -- log(serializedState, "Serialized state")
-      -- TODO: Use coroutine to load in the background
       local time = os.time()
-      -- local start, ending = string.find(serializedState, "([^|@|]+)")
       local substringStart = 0
+
       local start, ending = string.find(serializedState, "|@|", 0, true)
       recordedSerialized = string.sub(serializedState, substringStart, start - 1)
       substringStart = ending + 1
@@ -324,25 +335,18 @@ function onLoad(serializedState)
       start, ending = string.find(serializedState, "|@|", substringStart, true)
       local actionsSerialized = string.sub(serializedState, substringStart, start - 1)
       substringStart = ending + 1
-      --log(actionsSerialized, "actionsSerialized")
 
-      start, ending = string.find(serializedState, "|@|", substringStart, true)
       local dynamicSerialized = string.sub(serializedState, substringStart)
-      -- log(dynamicSerialized, "dynamicSerialized")
 
       log(os.time() - time, "Split string")
 
       startLuaCoroutine(Global, "loadRecorded")
-      -- recordedModels.load(recordedSerialized)
-      log(os.time() - time, "Loaded recorded models")
-
       actions.load(actionsSerialized)
-      log(os.time() - time, "Loaded actions")
 
-      local dynamic = JSON.decode(dynamicSerialized)
-      recordState = dynamic.recordState
-
+      recordState = JSON.decode(dynamicSerialized).recordState
       log(os.time() - time, "Total load time")
+    else
+      self.UI.hide("loadingPanel")
     end
 
     setupContextMenu()
@@ -350,15 +354,17 @@ function onLoad(serializedState)
     addHotkey("Next action", nextAction, false)
 end
 
+-- Internal function to load recorded models in a coroutine
 function loadRecorded()
   recordedModels.load(recordedSerialized)
   self.UI.hide("loadingPanel")
   return 1
 end
 
+-- Called by the game every 10 seconds, make sure to return fast!
 function onSave()
   local start = os.clock()
-  local state = recordedModels.save() .. "|@|" .. actions.save() .. "|@|" .. JSON.encode({ --TODO: pipe is not unique enough, may be in descriptions etc.
+  local state = recordedModels.save() .. "|@|" .. actions.save() .. "|@|" .. JSON.encode({
     recordState = recordState,
   })
   -- log(state, "Save state")
@@ -415,7 +421,7 @@ end
 function saveInitial(player_color, menu_position)
   items = getObjectsWithTag("recorded")
 
-  for k, v in pairs(items) do
+  for _, v in pairs(items) do
     recordedModels.add(v)
   end
 
@@ -470,8 +476,8 @@ end
 -- Move models to starting position and spawn deleted models
 function toInitial(player_color, menu_position)
   -- delete all objects
-  items = getObjectsWithTag("recorded")
-  for k, v in pairs(items) do
+  local items = getObjectsWithTag("recorded")
+  for _, v in pairs(items) do
     destroyObject(v)
   end
 
@@ -516,31 +522,29 @@ function nextAction(color)
 
   -- Execute all recorded changes for this action
   for guid, v in pairs(action) do
-    if k != "text" then
-      local item
+    local item
 
-      -- Spawn the object if it is new for this action
-      if v.spawn != nil then
-        item = localSpawn(recordedModels.getModelJson(v.spawn))
-      else -- or load it by GUID
-        item = getObjectFromGUID(guid)
-      end
+    -- Spawn the object if it is new for this action
+    if v.spawn != nil then
+      item = localSpawn(recordedModels.getModelJson(v.spawn))
+    else -- or load it by GUID
+      item = getObjectFromGUID(guid)
+    end
 
-      -- Move it, if moved
-      if v.move != nil then
-        if v.move.position != nil then
-          item.setPositionSmooth(v.move.position, false, false)
-        end
-        if v.move.rotation != nil then
-          item.setRotationSmooth(v.move.rotation, false, false)
-        end
+    -- Move it, if moved
+    if v.move != nil then
+      if v.move.position != nil then
+        item.setPositionSmooth(v.move.position, false, false)
       end
+      if v.move.rotation != nil then
+        item.setRotationSmooth(v.move.rotation, false, false)
+      end
+    end
 
-      -- Mark it deleted, if destroyed
-      if v.destroyed then
-        item.highlightOn("Red")
-        item.addTag("dead")
-      end
+    -- Mark it deleted, if destroyed
+    if v.destroyed then
+      item.highlightOn("Red")
+      item.addTag("dead")
     end
   end
 
