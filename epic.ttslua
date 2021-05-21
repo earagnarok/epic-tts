@@ -116,7 +116,7 @@ function createRecordedModels()
     local model = self.models[guid]
     if (model.cloneOf != null) then
       local originalJson = self.models[model.cloneOf].json
-      model.json = string.gsub(originalJson, clonedModel.cloneOf, guid)
+      model.json = string.gsub(originalJson, model.cloneOf, guid)
     end
 
     return model
@@ -233,7 +233,7 @@ function createActionsList(recordedModels)
     table.insert(self.actions, self.action)
     table.insert(self.actionsSerialized, JSON.encode(self.action))
     self.recordedModels.save()
-    resetCurrent()
+    self.action = {}
   end
 
   -- Update current action with text
