@@ -310,48 +310,48 @@ function createActionsList(recordedModels)
 end
 
 function onLoad(serializedState)
-    self.UI.hide("recordActionPanel")
+  self.UI.hide("recordActionPanel")
 
-    -- ZoC variables
-    inches = 2.54
-    rangeToolRanges = {5, 10, 15, 20, 30, 45, 60, 75, 15, 0}
-    elevation = 0.2
-    thickness = 0.05
+  -- ZoC variables
+  inches = 2.54
+  rangeToolRanges = {5, 10, 15, 20, 30, 45, 60, 75, 15, 0}
+  elevation = 0.2
+  thickness = 0.05
 
-    -- Battle report variables
-    recordedModels = createRecordedModels()
-    actions = createActionsList(recordedModels)
-    recordState = 0
-    replayIndex = 1
+  -- Battle report variables
+  recordedModels = createRecordedModels()
+  actions = createActionsList(recordedModels)
+  recordState = 0
+  replayIndex = 1
 
-    if serializedState != "" then
-      local time = os.time()
-      local substringStart = 0
+  if serializedState != "" then
+    local time = os.time()
+    local substringStart = 0
 
-      local start, ending = string.find(serializedState, "|@|", 0, true)
-      recordedSerialized = string.sub(serializedState, substringStart, start - 1)
-      substringStart = ending + 1
+    local start, ending = string.find(serializedState, "|@|", 0, true)
+    recordedSerialized = string.sub(serializedState, substringStart, start - 1)
+    substringStart = ending + 1
 
-      start, ending = string.find(serializedState, "|@|", substringStart, true)
-      local actionsSerialized = string.sub(serializedState, substringStart, start - 1)
-      substringStart = ending + 1
+    start, ending = string.find(serializedState, "|@|", substringStart, true)
+    local actionsSerialized = string.sub(serializedState, substringStart, start - 1)
+    substringStart = ending + 1
 
-      local dynamicSerialized = string.sub(serializedState, substringStart)
+    local dynamicSerialized = string.sub(serializedState, substringStart)
 
-      log(os.time() - time, "Split string")
+    log(os.time() - time, "Split string")
 
-      startLuaCoroutine(Global, "loadRecorded")
-      actions.load(actionsSerialized)
+    startLuaCoroutine(Global, "loadRecorded")
+    actions.load(actionsSerialized)
 
-      recordState = JSON.decode(dynamicSerialized).recordState
-      log(os.time() - time, "Total load time")
-    else
-      self.UI.hide("loadingPanel")
-    end
+    recordState = JSON.decode(dynamicSerialized).recordState
+    log(os.time() - time, "Total load time")
+  else
+    self.UI.hide("loadingPanel")
+  end
 
-    setupContextMenu()
-    addHotkey("Record action", recordAction, false)
-    addHotkey("Next action", nextAction, false)
+  setupContextMenu()
+  addHotkey("Record action", recordAction, false)
+  addHotkey("Next action", nextAction, false)
 end
 
 -- Internal function to load recorded models in a coroutine
@@ -591,49 +591,49 @@ end
 
 -- Draw ZoC stuff
 function onScriptingButtonDown(index, color)
-    local player = Player[color]
-    local selected = player.getSelectedObjects()
-    local range = rangeToolRanges[index]
-    if range == 0 then
-      print(player.steam_name, " disabled highlight")
-    elseif index == 9 then
-      print(player.steam_name, " requested objective range highlight")
+  local player = Player[color]
+  local selected = player.getSelectedObjects()
+  local range = rangeToolRanges[index]
+  if range == 0 then
+    print(player.steam_name, " disabled highlight")
+  elseif index == 9 then
+    print(player.steam_name, " requested objective range highlight")
+  else
+    print(player.steam_name, " requested ", range, "cm highlight")
+  end
+  local rangeInCm = range / inches
+  for k, v in pairs(selected) do
+    if index == 10 then
+      v.setVectorLines({})
+    elseif  index == 9 then
+      v.setVectorLines({
+          {
+              points    = circleFromCenter(v, rangeInCm),
+              color     = stringColorToRGB(color),
+              thickness = compensatedThickness(v),
+              rotation  = {0, 0, 0},
+          }
+      })
+    elseif hasRectangleBase(v) then
+      v.setVectorLines({
+          {
+              points    = rectangleZoc(v, rangeInCm),
+              color     = stringColorToRGB(color),
+              thickness = compensatedThickness(v),
+              rotation  = {0, 0, 0},
+          }
+      })
     else
-      print(player.steam_name, " requested ", range, "cm highlight")
+      v.setVectorLines({
+          {
+              points    = circleZoc(v, rangeInCm),
+              color     = stringColorToRGB(color),
+              thickness = compensatedThickness(v),
+              rotation  = {0, 0, 0},
+          }
+      })
     end
-    local rangeInCm = range / inches
-    for k, v in pairs(selected) do
-      if index == 10 then
-        v.setVectorLines({})
-      elseif  index == 9 then
-        v.setVectorLines({
-            {
-                points    = circleFromCenter(v, rangeInCm),
-                color     = stringColorToRGB(color),
-                thickness = compensatedThickness(v),
-                rotation  = {0, 0, 0},
-            }
-        })
-      elseif hasRectangleBase(v) then
-        v.setVectorLines({
-            {
-                points    = rectangleZoc(v, rangeInCm),
-                color     = stringColorToRGB(color),
-                thickness = compensatedThickness(v),
-                rotation  = {0, 0, 0},
-            }
-        })
-      else
-        v.setVectorLines({
-            {
-                points    = circleZoc(v, rangeInCm),
-                color     = stringColorToRGB(color),
-                thickness = compensatedThickness(v),
-                rotation  = {0, 0, 0},
-            }
-        })
-      end
-    end
+  end
 end
 
 function compensatedThickness(object)
@@ -647,19 +647,19 @@ function hasRectangleBase(obj)
 end
 
 function circleZoc(obj, radius)
-    local size = obj.getBoundsNormalized()["size"]
-    local radiusFromCenter = radius + (math.max(size[1], size[3]) / 2)
-    local points = {}
-    insertCircle(points, obj, radiusFromCenter, elevation)
-    insertCircle(points, obj, radiusFromCenter, elevation + 1)
-    return points
+  local size = obj.getBoundsNormalized()["size"]
+  local radiusFromCenter = radius + (math.max(size[1], size[3]) / 2)
+  local points = {}
+  insertCircle(points, obj, radiusFromCenter, elevation)
+  insertCircle(points, obj, radiusFromCenter, elevation + 1)
+  return points
 end
 
 function circleFromCenter(obj, radius)
-    local points = {}
-    insertCircle(points, obj, radius, elevation)
-    insertCircle(points, obj, radius, elevation + 1)
-    return points
+  local points = {}
+  insertCircle(points, obj, radius, elevation)
+  insertCircle(points, obj, radius, elevation + 1)
+  return points
 end
 
 function rectangleZoc(obj, zoc)
@@ -692,7 +692,6 @@ function insertCircle(points, object, radius, localElevation)
     table.insert(points, globalToLocal(object, {
       (math.cos(math.rad(i*10)) * radius),
       localElevation,
-      (math.sin(math.rad(i*10)) * radius)
       (math.sin(math.rad(i*10)) * radius)
     }))
   end
