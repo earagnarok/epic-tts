@@ -138,7 +138,7 @@ function createRecordedModels()
   -- Load a save, called as part of a coroutine to avoid locking up TTS
   local load = function(json)
     if json != "" then
-      -- log(json, "Json")
+      self.dirty = false -- do not calculate new save state during loading
       log(string.len(json), "Json size")
 
       local index = 0
@@ -152,7 +152,7 @@ function createRecordedModels()
         local model = JSON.decode(modelJson)
         -- log(model, "Deserialized model")
         self.models[model.guid] = model
-        self.modelsJson[model.guid] = modelJson
+        table.insert(self.modelsJson, modelJson)
 
         if model.identity != nil then
           self.modelIndex[model.identity] = model.guid
@@ -165,11 +165,11 @@ function createRecordedModels()
       end
 
       -- The final part of the string is a json object containing initialModels and initial state
-      local rest = string.sub(json, index + 1)
+      local rest
       if ending != nil then -- if save does not contain models, else ending is nill
         rest = string.sub(json, ending + 1)
       else
-        rest = string.sub(json, index + 1)
+        rest = string.sub(json, index)
       end
 
       local decoded = JSON.decode(rest)
@@ -513,7 +513,6 @@ function nextAction(color)
   -- If we reached the end of the replay
   if action == nil then
     broadcastToAll("End of recording")
-    setupContextMenu()
     return
   end
 
@@ -550,6 +549,7 @@ function nextAction(color)
 
   -- Move on to next action
   replayIndex = replayIndex + 1
+  setupContextMenu()
 end
 
 -- Delete all models marked as dead
