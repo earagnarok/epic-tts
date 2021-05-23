@@ -139,14 +139,13 @@ function createRecordedModels()
   local load = function(json)
     if json != "" then
       self.dirty = false -- do not calculate new save state during loading
-      log(string.len(json), "Json size")
+      local jsonSize = string.len(json)
 
       local index = 0
       local start, ending = string.find(json, "|#|", 0, true)
 
       -- Loop over the save to find each model, separated by |#|
       while start != nil and start != 1 do
-        log("Index: " .. index .. ", start:" .. start .. ", ending: " .. ending)
         local modelJson = string.sub(json, index, start - 1)
         -- log(string.len(modelJson), "Model json")
         local model = JSON.decode(modelJson)
@@ -161,6 +160,8 @@ function createRecordedModels()
         index = ending + 1
         start, ending = string.find(json, "|#|", index, true)
 
+        local progress = math.floor(((index / jsonSize) * 100) + 0.5)
+        Global.UI.setAttribute("loadingProgress", "text", progress .. "%")
         coroutine.yield(0)
       end
 

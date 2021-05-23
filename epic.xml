@@ -14,8 +14,9 @@
 
 <Panel color="black" width="30%" height="15%" padding="2" id="loadingPanel" visibility="None">
   <Panel color="white" padding="10">
-    <VerticalLayout spacing="10">
-      <Text>Loading, please wait...</Text>
+    <VerticalLayout padding="0">
+      <Text>Loading battle report, please wait...</Text>
+      <Text id="loadingProgress">0%</Text>
     </VerticalLayout>
   </Panel>
 </Panel>
