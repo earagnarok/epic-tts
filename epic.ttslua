@@ -364,12 +364,12 @@ end
 
 -- Called by the game every 10 seconds, make sure to return fast!
 function onSave()
-  local start = os.clock()
+  -- local start = os.clock()
   local state = recordedModels.save() .. "|@|" .. actions.save() .. "|@|" .. JSON.encode({
     recordState = recordState,
   })
   -- log(state, "Save state")
-  log(os.clock() - start, "State creation time")
+  -- log(os.clock() - start, "State creation time")
   return state
 end
 
@@ -507,18 +507,14 @@ function nextAction(color)
     return
   end
 
-  -- remove all models marked as killed in previous action
-  deleteDead()
   local action = actions.getAction(replayIndex)
-
-  -- If we reached the end of the replay
-  if action == nil then
+  if action == nil then -- If we reached the end of the replay
     broadcastToAll("End of recording")
     return
   end
 
   -- Show axtion description as a broadcast
-  broadcastToAll(action.text)
+  broadcastToAll(replayIndex .. ". " .. action.text)
 
   -- Execute all recorded changes for this action
   for guid, v in pairs(action) do
@@ -543,10 +539,11 @@ function nextAction(color)
 
     -- Mark it deleted, if destroyed
     if v.destroyed then
-      item.highlightOn("Red")
       item.addTag("dead")
     end
   end
+
+  startLuaCoroutine(Global, "fadeOutModels")
 
   -- Move on to next action
   replayIndex = replayIndex + 1
@@ -554,10 +551,32 @@ function nextAction(color)
 end
 
 -- Delete all models marked as dead
-function deleteDead()
-  items = getObjectsWithTag("dead")
-  for k, v in pairs(items) do
-    destroyObject(v)
+function fadeOutModels()
+  local items = getObjectsWithTag("dead")
+  for _, item in pairs(items) do
+    item.highlightOn("Red", 0.4)
+  end
+  sleep(40)
+
+  items = getObjectsWithTag("dead") -- get the items agains because of concurrency
+  for _, item in pairs(items) do
+    item.highlightOn("Red", 0.4)
+  end
+  sleep(40)
+
+  items = getObjectsWithTag("dead") -- get the items agains because of concurrency
+  for _, item in pairs(items) do
+    destroyObject(item)
+  end
+
+  return 1
+end
+
+function sleep(amount)
+  local count = 0
+  while count < amount do
+      count = count + 1
+      coroutine.yield(0)
   end
 end
 

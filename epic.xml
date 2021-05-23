@@ -16,7 +16,7 @@
   <Panel color="white" padding="10">
     <VerticalLayout padding="0">
       <Text>Loading battle report, please wait...</Text>
-      <Text id="loadingProgress">0%</Text>
+      <Text id="loadingProgress"></Text>
     </VerticalLayout>
   </Panel>
 </Panel>
