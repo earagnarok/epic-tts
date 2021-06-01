@@ -1,10 +1,6 @@
 --[[ Lua code. See documentation: http://berserk-games.com/knowledgebase/scripting/ --]]
---[[ The onLoad event is called after the game save finishes loading. --]]
-
---[[ The onUpdate event is called once per frame. --]]
-function onUpdate ()
-    --[[ print('onUpdate loop!') --]]
-end
+-- TODO: Record side changes of order dice doesn't work
+-- TODO: Posibility to edit action text on older actions?
 
 -- Hash object used to calculate hashes over strings
 function createHash()
@@ -72,10 +68,14 @@ function createRecordedModels()
     hash.update(model.getDescription())
     hash.update(model.getColorTint():toHex(false))
     hash.update(model.getCustomObject()["mesh"])
+    for tag, value in pairs(model.getTags()) do
+      if value != "recorded" then
+        hash.update(value)
+      end
+    end
     for _, child in pairs(model.getAttachments()) do
       hash.update(child["name"])
       hash.update(child["description"])
-      -- TODO: Is it possible to access the child mesh? Detach?
     end
 
     return hash.result()
@@ -123,7 +123,7 @@ function createRecordedModels()
   end
 
   -- Get a string representation of the save state
-  local save = function() -- TODO: Dont save during loading...
+  local save = function()
     if self.dirty then
       self.json = table.concat(self.modelsJson, "|#|") .. "|#|" .. JSON.encode({
         initialModels = self.initialModels,
@@ -147,9 +147,7 @@ function createRecordedModels()
       -- Loop over the save to find each model, separated by |#|
       while start != nil and start != 1 do
         local modelJson = string.sub(json, index, start - 1)
-        -- log(string.len(modelJson), "Model json")
         local model = JSON.decode(modelJson)
-        -- log(model, "Deserialized model")
         self.models[model.guid] = model
         table.insert(self.modelsJson, modelJson)
 
@@ -176,11 +174,8 @@ function createRecordedModels()
       local decoded = JSON.decode(rest)
       self.initialModels = decoded.initialModels
       self.initial = decoded.initial
-      self.dirty = false
       self.json = json
     end
-
-    log("Finished loading models")
   end
 
   return {
@@ -193,6 +188,7 @@ function createRecordedModels()
   }
 end
 
+-- Object recording actions
 function createActionsList(recordedModels)
   -- action = {
   --   spawn = guid, -- reference to object in recordedModels
@@ -226,7 +222,6 @@ function createActionsList(recordedModels)
     for _, v in pairs(self.actions) do
       table.insert(self.actionsSerialized, JSON.encode(v))
     end
-
   end
 
   -- Save current action and start on a new one
@@ -257,6 +252,12 @@ function createActionsList(recordedModels)
         }
       }
     end
+  end
+
+  local recordRotation = function(object, y, z)
+    recordMove(object)
+    self.action[object.guid].move.rotation.y = y
+    self.action[object.guid].move.rotation.z = z
   end
 
   -- update current action with a newly spawned model
@@ -303,6 +304,7 @@ function createActionsList(recordedModels)
     recordMove = recordMove,
     recordSpawn = recordSpawn,
     recordDelete = recordDelete,
+    recordRotation = recordRotation,
     resetCurrent = resetCurrent,
     load = load,
     save = save,
@@ -326,7 +328,6 @@ function onLoad(serializedState)
   replayIndex = 1
 
   if serializedState != "" then
-    local time = os.time()
     local substringStart = 0
 
     local start, ending = string.find(serializedState, "|@|", 0, true)
@@ -339,20 +340,17 @@ function onLoad(serializedState)
 
     local dynamicSerialized = string.sub(serializedState, substringStart)
 
-    log(os.time() - time, "Split string")
-
     startLuaCoroutine(Global, "loadRecorded")
     actions.load(actionsSerialized)
 
     recordState = JSON.decode(dynamicSerialized).recordState
-    log(os.time() - time, "Total load time")
   else
     self.UI.hide("loadingPanel")
   end
 
   setupContextMenu()
   addHotkey("Record action", recordAction, false)
-  addHotkey("Next action", nextAction, false)
+  addHotkey("Show next action", nextAction, false)
 end
 
 -- Internal function to load recorded models in a coroutine
@@ -377,8 +375,8 @@ function setupContextMenu()
   clearContextMenu()
 
   if recordState == 0 then
-    addContextMenuItem("+ to recording", tagRecorded)
-    addContextMenuItem("- from recorded", removeRecorded)
+    addContextMenuItem("Record models", tagRecorded)
+    addContextMenuItem("Forget models", removeRecorded)
     addContextMenuItem("Show recorded", flash)
     addContextMenuItem("Start recording", saveInitial)
   elseif recordState == 1 then
@@ -389,14 +387,14 @@ function setupContextMenu()
     addContextMenuItem("Resume recording", resumeRecording)
   else
     addContextMenuItem("Restart replay", toInitial)
-    addContextMenuItem("Show next", nextAction)
+    addContextMenuItem("Show next action", nextAction)
   end
 end
 
 -- Highlight all recorded models
 function flash(player_color, menu_position)
-  items = getObjectsWithTag("recorded")
-  for k, v in pairs(items) do
+  local items = getObjectsWithTag("recorded")
+  for _, v in pairs(items) do
     v.highlightOn(player_color, 1)
   end
 end
@@ -404,7 +402,7 @@ end
 -- add models to the recording
 function tagRecorded(player_color, menu_position)
     local selected = Player[player_color].getSelectedObjects()
-    for k, v in pairs(selected) do
+    for _, v in pairs(selected) do
       v.addTag("recorded")
     end
 end
@@ -412,16 +410,15 @@ end
 -- remove models from the recording
 function removeRecorded(player_color, menu_position)
     local selected = Player[player_color].getSelectedObjects()
-    for k, v in pairs(selected) do
+    for _, v in pairs(selected) do
       v.removeTag("recorded")
     end
 end
 
--- Save initial state of the recording and info about recorded modes
+-- Save initial state of the recording and info about recorded models
 -- in order to be able to spawn them later
 function saveInitial(player_color, menu_position)
-  items = getObjectsWithTag("recorded")
-
+  local items = getObjectsWithTag("recorded")
   for _, v in pairs(items) do
     recordedModels.add(v)
   end
@@ -514,7 +511,9 @@ function nextAction(color)
   end
 
   -- Show axtion description as a broadcast
-  broadcastToAll(replayIndex .. ". " .. action.text)
+  if action.text != nill then
+    broadcastToAll(replayIndex .. ". " .. action.text)
+  end
 
   -- Execute all recorded changes for this action
   for guid, v in pairs(action) do
@@ -543,7 +542,7 @@ function nextAction(color)
     end
   end
 
-  startLuaCoroutine(Global, "fadeOutModels")
+  startLuaCoroutine(Global, "fadeOutModels") -- fade out all models taged as dead
 
   -- Move on to next action
   replayIndex = replayIndex + 1
@@ -566,12 +565,19 @@ function fadeOutModels()
 
   items = getObjectsWithTag("dead") -- get the items agains because of concurrency
   for _, item in pairs(items) do
+    item.highlightOn("Red", 0.4)
+  end
+  sleep(40)
+
+  items = getObjectsWithTag("dead") -- get the items agains because of concurrency
+  for _, item in pairs(items) do
     destroyObject(item)
   end
 
   return 1
 end
 
+-- Let a coroutine sleep
 function sleep(amount)
   local count = 0
   while count < amount do
@@ -579,6 +585,7 @@ function sleep(amount)
       coroutine.yield(0)
   end
 end
+
 
 -- Record deleted models, called by the game
 function onObjectDestroy(object)
@@ -589,6 +596,13 @@ end
 
 -- Record rotated models, called by the game
 function onObjectRotate(object, spin, flip, player_color, old_spin, old_flip)
+  if object.hasTag("recorded") and recordState == 1 then
+    actions.recordRotation(object, spin, flip)
+  end
+end
+
+-- Record rotate of e.g. an order dice
+function onObjectNumberTyped(object, player_color, number)
   if object.hasTag("recorded") and recordState == 1 then
     actions.recordMove(object)
   end
@@ -615,11 +629,11 @@ function onScriptingButtonDown(index, color)
   local selected = player.getSelectedObjects()
   local range = rangeToolRanges[index]
   if range == 0 then
-    print(player.steam_name, " disabled highlight")
+    printToAll(player.steam_name .. " disabled highlight", {r=1,g=1,b=1})
   elseif index == 9 then
-    print(player.steam_name, " requested objective range highlight")
+    printToAll(player.steam_name .. " requested objective range highlight", {r=1,g=1,b=1})
   else
-    print(player.steam_name, " requested ", range, "cm highlight")
+    printToAll(player.steam_name .. " requested " .. range .. "cm highlight", {r=1,g=1,b=1})
   end
   local rangeInCm = range / inches
   for k, v in pairs(selected) do
