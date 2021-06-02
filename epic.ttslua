@@ -513,8 +513,11 @@ function nextAction(color)
   -- Show axtion description as a broadcast
   if action.text != nill then
     broadcastToAll(replayIndex .. ". " .. action.text)
+  else
+    broadcastToAll(replayIndex .. ".")
   end
 
+  local modelsKilled = false
   -- Execute all recorded changes for this action
   for guid, v in pairs(action) do
     local item
@@ -539,10 +542,13 @@ function nextAction(color)
     -- Mark it deleted, if destroyed
     if v.destroyed then
       item.addTag("dead")
+      modelsKilled = true
     end
   end
 
-  startLuaCoroutine(Global, "fadeOutModels") -- fade out all models taged as dead
+  if modelsKilled then
+    startLuaCoroutine(Global, "fadeOutModels") -- fade out all models taged as dead
+  end
 
   -- Move on to next action
   replayIndex = replayIndex + 1
@@ -551,23 +557,15 @@ end
 
 -- Delete all models marked as dead
 function fadeOutModels()
-  local items = getObjectsWithTag("dead")
-  for _, item in pairs(items) do
-    item.highlightOn("Red", 0.4)
-  end
-  sleep(40)
+  local items
 
-  items = getObjectsWithTag("dead") -- get the items agains because of concurrency
-  for _, item in pairs(items) do
-    item.highlightOn("Red", 0.4)
+  for i=0,2 do
+    items = getObjectsWithTag("dead") -- get the items agains because of concurrency
+    for _, item in pairs(items) do
+      item.highlightOn("Red", 0.4)
+    end
+    sleep(40)
   end
-  sleep(40)
-
-  items = getObjectsWithTag("dead") -- get the items agains because of concurrency
-  for _, item in pairs(items) do
-    item.highlightOn("Red", 0.4)
-  end
-  sleep(40)
 
   items = getObjectsWithTag("dead") -- get the items agains because of concurrency
   for _, item in pairs(items) do
