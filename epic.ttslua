@@ -229,6 +229,12 @@ function createActionsList(recordedModels)
     table.insert(self.actions, self.action)
     table.insert(self.actionsSerialized, JSON.encode(self.action))
     self.recordedModels.save()
+
+    if self.action.text != nil then
+      printToAll("Action recorded: " .. self.action.text, {r=1,g=1,b=1})
+    else
+      printToAll("Action recorded", {r=1,g=1,b=1})
+    end
     self.action = {}
   end
 
@@ -314,6 +320,7 @@ end
 
 function onLoad(serializedState)
   self.UI.hide("recordActionPanel")
+  self.UI.hide("endRecordingPanel")
 
   -- ZoC variables
   inches = 2.54
@@ -431,8 +438,17 @@ end
 
 -- End the recording
 function finalizeRecording()
+  self.UI.show("endRecordingPanel")
+end
+
+function endRecordingOk()
+  self.UI.hide("endRecordingPanel")
   recordState = 2
-  setupContextMenu()
+  toInitial()
+end
+
+function endRecordingCancel()
+  self.UI.hide("endRecordingPanel")
 end
 
 -- Resume the recording
@@ -472,7 +488,7 @@ function recordActionCancel()
 end
 
 -- Move models to starting position and spawn deleted models
-function toInitial(player_color, menu_position)
+function toInitial()
   -- delete all objects
   local items = getObjectsWithTag("recorded")
   for _, v in pairs(items) do
@@ -487,6 +503,7 @@ function toInitial(player_color, menu_position)
   end
 
   replayIndex = 1
+  setupContextMenu()
 end
 
 -- Privte helper function: Spawn a model
@@ -626,9 +643,7 @@ function onScriptingButtonDown(index, color)
   local player = Player[color]
   local selected = player.getSelectedObjects()
   local range = rangeToolRanges[index]
-  if range == 0 then
-    printToAll(player.steam_name .. " disabled highlight", {r=1,g=1,b=1})
-  elseif index == 9 then
+  if index == 9 then
     printToAll(player.steam_name .. " requested objective range highlight", {r=1,g=1,b=1})
   else
     printToAll(player.steam_name .. " requested " .. range .. "cm highlight", {r=1,g=1,b=1})

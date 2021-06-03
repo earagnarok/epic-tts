@@ -12,6 +12,21 @@
   </Panel>
 </Panel>
 
+<Panel color="black" width="25%" height="15%" padding="2" id="endRecordingPanel" visibility="None">
+  <Panel color="white" padding="10">
+    <VerticalLayout spacing="10">
+      <Text>
+        <b>Are you sure you want to end the recording?</b>
+        All models will be reset to their initial positions, and any changes that has not been recorded will be lost. Recording can be resumed once all recorded actions has been replayed.
+       </Text>
+      <HorizontalLayout>
+        <Button onClick="endRecordingOk" id="endRecordingOk">OK</Button>
+        <Button onClick="endRecordingCancel" id="endRecordingCancel">Cancel</Button>
+      </HorizontalLayout>
+    </VerticalLayout>
+  </Panel>
+</Panel>
+
 <Panel color="black" width="30%" height="15%" padding="2" id="loadingPanel" visibility="None">
   <Panel color="white" padding="10">
     <VerticalLayout padding="0">
