@@ -29,7 +29,7 @@ end
 -- Object holding all models recorded
 function createRecordedModels()
   local self = {
-    initialModels = {}, -- List of all GUIDs pressent when the recording started
+    initialModels = {}, -- List of all GUIDs pressent when the recording started, used to restore initial state
     initial = true, -- Boolean if recording has started, once started models should not be added to the initialModels table
     models = {}, -- List of all models on the table (contains full or clone model info)
     modelsJson = {}, -- Serialized models
@@ -88,6 +88,11 @@ function createRecordedModels()
 
   -- Add a model to the recording
   local add = function(model)
+    if self.models[model.guid] != nil then
+      log(model, "Model already added, ignoring!")
+      return
+    end
+
     self.dirty = true
     local modelId = objectIdentity(model)
     local cloneOf = self.modelIndex[modelId]
@@ -498,8 +503,7 @@ function toInitial()
   -- Spawn all initial models
   local initial = recordedModels.initialModels()
   for _, guid in pairs(initial) do
-    local json = recordedModels.getModelJson(guid)
-    localSpawn(json)
+    localSpawn(recordedModels.getModelJson(guid))
   end
 
   replayIndex = 1
@@ -549,7 +553,7 @@ function nextAction(color)
     -- Move it, if moved
     if v.move != nil then
       if v.move.position != nil then
-        item.setPositionSmooth(v.move.position, false, false)
+        item.setPositionSmooth(v.move.position, false, false) -- nill once?
       end
       if v.move.rotation != nil then
         item.setRotationSmooth(v.move.rotation, false, false)
