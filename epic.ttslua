@@ -285,15 +285,15 @@ function createActionsList(recordedModels)
   end
 
   -- Update current action with a deleted model
-  local recordDelete = function(object)
-    if self.action[object.guid] != nil then
-      if self.action[object.guid].spawn != nil then -- if the object was spawned during this action
-        self.action[object.guid] = nil -- remove the entire action for this model
+  local recordDelete = function(objectGuid)
+    if self.action[objectGuid] != nil then
+      if self.action[objectGuid].spawn != nil then -- if the object was spawned during this action
+        self.action[objectGuid] = nil -- remove the entire action for this model
       else
-        self.action[object.guid].destroyed = true
+        self.action[objectGuid].destroyed = true
       end
     else
-      self.action[object.guid] = {
+      self.action[objectGuid] = {
         destroyed = true
       }
     end
@@ -550,20 +550,27 @@ function nextAction(color)
       item = getObjectFromGUID(guid)
     end
 
-    -- Move it, if moved
-    if v.move != nil then
-      if v.move.position != nil then
-        item.setPositionSmooth(v.move.position, false, false) -- nill once?
+    -- TODO: item seems to be nil in some cases
+    if item == nil then
+      broadcastToAll("Script error :( see logs for more details")
+      log(guid, "Failed to load item, guid: ")
+      log(v, "Item action: ")
+    else
+      -- Move it, if moved
+      if v.move != nil then
+        if v.move.position != nil then
+          item.setPositionSmooth(v.move.position, false, false)
+        end
+        if v.move.rotation != nil then
+          item.setRotationSmooth(v.move.rotation, false, false)
+        end
       end
-      if v.move.rotation != nil then
-        item.setRotationSmooth(v.move.rotation, false, false)
-      end
-    end
 
-    -- Mark it deleted, if destroyed
-    if v.destroyed then
-      item.addTag("dead")
-      modelsKilled = true
+      -- Mark it deleted, if destroyed
+      if v.destroyed then
+        item.addTag("dead")
+        modelsKilled = true
+      end
     end
   end
 
@@ -609,7 +616,15 @@ end
 -- Record deleted models, called by the game
 function onObjectDestroy(object)
   if object.hasTag("recorded") and not object.hasTag("dead") and recordState == 1 then
-    actions.recordDelete(object)
+    actions.recordDelete(object.guid)
+  end
+end
+
+-- Handle models changing state, called by the game
+function onObjectStateChange(object, oldStateGuid)
+  if object.hasTag("recorded") and recordState == 1 then
+    actions.recordSpawn(object)
+    actions.recordDelete(oldStateGuid)
   end
 end
 
