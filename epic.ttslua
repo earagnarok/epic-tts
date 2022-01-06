@@ -285,15 +285,15 @@ function createActionsList(recordedModels)
   end
 
   -- Update current action with a deleted model
-  local recordDelete = function(objectGuid)
-    if self.action[objectGuid] != nil then
-      if self.action[objectGuid].spawn != nil then -- if the object was spawned during this action
-        self.action[objectGuid] = nil -- remove the entire action for this model
+  local recordDelete = function(object)
+    if self.action[object.guid] != nil then
+      if self.action[object.guid].spawn != nil then -- if the object was spawned during this action
+        self.action[object.guid] = nil -- remove the entire action for this model
       else
-        self.action[objectGuid].destroyed = true
+        self.action[object.guid].destroyed = true
       end
     else
-      self.action[objectGuid] = {
+      self.action[object.guid] = {
         destroyed = true
       }
     end
@@ -550,11 +550,11 @@ function nextAction(color)
       item = getObjectFromGUID(guid)
     end
 
-    -- TODO: item seems to be nil in some cases
-    if item == nil then
-      broadcastToAll("Script error :( see logs for more details")
-      log(guid, "Failed to load item, guid: ")
-      log(v, "Item action: ")
+    -- This seems to happen from time to time, bug in TTS?!?
+    if item == nill then
+      broadcastToAll("Script failure, see the log for details...")
+      log(guid, "Failed to load item with GUID:")
+      log(v, "Failing action:")
     else
       -- Move it, if moved
       if v.move != nil then
@@ -616,15 +616,7 @@ end
 -- Record deleted models, called by the game
 function onObjectDestroy(object)
   if object.hasTag("recorded") and not object.hasTag("dead") and recordState == 1 then
-    actions.recordDelete(object.guid)
-  end
-end
-
--- Handle models changing state, called by the game
-function onObjectStateChange(object, oldStateGuid)
-  if object.hasTag("recorded") and recordState == 1 then
-    actions.recordSpawn(object)
-    actions.recordDelete(oldStateGuid)
+    actions.recordDelete(object)
   end
 end
 
@@ -695,7 +687,7 @@ function onScriptingButtonDown(index, color)
               points    = circleZoc(v, rangeInCm),
               color     = stringColorToRGB(color),
               thickness = compensatedThickness(v),
-              rotation  = {0, 0, 0},
+              rotation  = {0, v.getRotation().y, 0},
           }
       })
     end
@@ -703,7 +695,7 @@ function onScriptingButtonDown(index, color)
 end
 
 function compensatedThickness(object)
-  return (thickness / object.getScale()["x"])
+  return (thickness / math.max(object.getScale()["x"], object.getScale()["y"], object.getScale()["z"]))
 end
 
 function hasRectangleBase(obj)
@@ -735,31 +727,59 @@ function rectangleZoc(obj, zoc)
   return points
 end
 
-function insertRectangle(points, obj, localElevation,  zoc)
+function insertRectangle(points, obj, localElevation, zoc)
   local width = obj.getBoundsNormalized()["size"][1]
   local height = obj.getBoundsNormalized()["size"][3]
-  handleRactanglePoint(points, obj, {zoc+(width/2), localElevation, -height/2})
+  handleRactanglePoint(points, obj, {(width/2) + zoc, localElevation, 0})
+
   for i=0,9 do
-      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*10)) * zoc})
+      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*5)) * zoc})
   end
+  if (obj.hasTag("FxF")) then
+    handleRactanglePoint(points, obj, {width/2, localElevation, height/2})
+    handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(45)) * zoc, localElevation, (height/2) + math.sin(math.rad(45)) * zoc})
+  end
+  for i=9,18 do
+      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*5)) * zoc})
+  end
+
   for i=10,18 do
       handleRactanglePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*10)) * zoc})
   end
+
   for i=19,27 do
       handleRactanglePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
   end
-  for i=28,36 do
-      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
+
+  for i=56,65 do
+      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*5)) * zoc})
   end
+  if (obj.hasTag("FxF")) then
+    handleRactanglePoint(points, obj, {width/2, localElevation, -height/2})
+  end
+  for i=65,72 do
+      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*5)) * zoc})
+  end
+
+  handleRactanglePoint(points, obj, {(width/2) + zoc, localElevation, 0})
 end
 
 function insertCircle(points, object, radius, localElevation)
-  for i = 0,36 do
+  for i = 0,72 do
     table.insert(points, globalToLocal(object, {
-      (math.cos(math.rad(i*10)) * radius),
+      (math.cos(math.rad(i*5)) * radius),
       localElevation,
-      (math.sin(math.rad(i*10)) * radius)
+      (math.sin(math.rad(i*5)) * radius)
     }))
+
+    if (i == 9 or i == 63) and object.hasTag("FxF") then
+      table.insert(points, globalToLocal(object, {0, localElevation, 0}))
+      table.insert(points, globalToLocal(object, {
+        (math.cos(math.rad(i*5)) * radius),
+        localElevation,
+        (math.sin(math.rad(i*5)) * radius)
+      }))
+    end
   end
 end
 
