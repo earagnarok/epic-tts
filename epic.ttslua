@@ -1,5 +1,4 @@
 --[[ Lua code. See documentation: http://berserk-games.com/knowledgebase/scripting/ --]]
--- TODO: Record side changes of order dice doesn't work
 -- TODO: Posibility to edit action text on older actions?
 
 -- Hash object used to calculate hashes over strings
@@ -649,7 +648,7 @@ function onObjectSpawn(object)
 end
 
 
--- Draw ZoC stuff
+-- Draw ranges around models
 function onScriptingButtonDown(index, color)
   local player = Player[color]
   local selected = player.getSelectedObjects()
@@ -687,7 +686,7 @@ function onScriptingButtonDown(index, color)
               points    = circleZoc(v, rangeInCm),
               color     = stringColorToRGB(color),
               thickness = compensatedThickness(v),
-              rotation  = {0, v.getRotation().y, 0},
+              rotation  = {0, 0, 0},
           }
       })
     end
@@ -730,62 +729,66 @@ end
 function insertRectangle(points, obj, localElevation, zoc)
   local width = obj.getBoundsNormalized()["size"][1]
   local height = obj.getBoundsNormalized()["size"][3]
-  handleRactanglePoint(points, obj, {(width/2) + zoc, localElevation, 0})
+  handlePoint(points, obj, {(width/2) + zoc, localElevation, 0})
 
   for i=0,9 do
-      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*5)) * zoc})
+      handlePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*5)) * zoc})
   end
   if (obj.hasTag("FxF")) then
-    handleRactanglePoint(points, obj, {width/2, localElevation, height/2})
-    handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(45)) * zoc, localElevation, (height/2) + math.sin(math.rad(45)) * zoc})
+    handlePoint(points, obj, {width/2, localElevation, height/2})
+    handlePoint(points, obj, {(width/2) + math.cos(math.rad(45)) * zoc, localElevation, (height/2) + math.sin(math.rad(45)) * zoc})
   end
   for i=9,18 do
-      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*5)) * zoc})
+      handlePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*5)) * zoc})
   end
 
   for i=10,18 do
-      handleRactanglePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*10)) * zoc})
+      handlePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (height/2) + math.sin(math.rad(i*10)) * zoc})
   end
 
   for i=19,27 do
-      handleRactanglePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
+      handlePoint(points, obj, {(-width/2) + math.cos(math.rad(i*10)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*10)) * zoc})
   end
 
   for i=56,65 do
-      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*5)) * zoc})
+      handlePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*5)) * zoc})
   end
   if (obj.hasTag("FxF")) then
-    handleRactanglePoint(points, obj, {width/2, localElevation, -height/2})
+    handlePoint(points, obj, {width/2, localElevation, -height/2})
   end
   for i=65,72 do
-      handleRactanglePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*5)) * zoc})
+      handlePoint(points, obj, {(width/2) + math.cos(math.rad(i*5)) * zoc, localElevation, (-height/2) + math.sin(math.rad(i*5)) * zoc})
   end
 
-  handleRactanglePoint(points, obj, {(width/2) + zoc, localElevation, 0})
+  handlePoint(points, obj, {(width/2) + zoc, localElevation, 0})
 end
 
 function insertCircle(points, object, radius, localElevation)
   for i = 0,72 do
-    table.insert(points, globalToLocal(object, {
+    handlePoint(points, object, {
       (math.cos(math.rad(i*5)) * radius),
       localElevation,
       (math.sin(math.rad(i*5)) * radius)
-    }))
+    })
 
     if (i == 9 or i == 63) and object.hasTag("FxF") then
-      table.insert(points, globalToLocal(object, {0, localElevation, 0}))
-      table.insert(points, globalToLocal(object, {
+      handlePoint(points, object, {0, localElevation, 0})
+      handlePoint(points, object, {
         (math.cos(math.rad(i*5)) * radius),
         localElevation,
         (math.sin(math.rad(i*5)) * radius)
-      }))
+      })
     end
   end
 end
 
-function handleRactanglePoint(result, object, point)
+function handlePoint(result, object, point)
   local rotated = rotateRoundY(math.rad(-object.getRotation().y + 360), point)
-  table.insert(result, globalToLocal(object, rotated))
+  table.insert(result, object.positionToLocal({
+    rotated[1] + object.getPosition().x,
+    rotated[2] + object.getPosition().y,
+    rotated[3] + object.getPosition().z
+  }))
 end
 
 function rotateRoundY(angle, point)
@@ -794,12 +797,4 @@ function rotateRoundY(angle, point)
     point[2],
     point[1] * math.sin(angle) + point[3] * math.cos(angle)
   }
-end
-
-function globalToLocal(object, coordinates)
-  return object.positionToLocal({
-    coordinates[1] + object.getPosition().x,
-    coordinates[2] + object.getPosition().y,
-    coordinates[3] + object.getPosition().z
-  })
 end
